@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Three.js Heightmap Pointcloud (Masked)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0e0f13; color: #e6e6e6; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    #overlayInfo {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      font-size: 12px;
+      color: #b0b5bd;
+      background: rgba(20, 22, 28, 0.75);
+      padding: 6px 10px;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      z-index: 10;
+    }
+    #overlayInfo a {
+      color: #9bd;
+    }
+    canvas.drop-target {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      outline: 1px solid transparent;
+      transition: outline-color 0.2s ease;
+    }
+    canvas.drop-target.drag-over {
+      outline: 2px dashed rgba(155, 187, 221, 0.85);
+    }
+    a, a:visited { color: #9bd; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="overlayInfo">Drag a heightmap onto the canvas to replace. Project by <a href="https://www.threads.com/@taylor" target="_blank" rel="noopener">@Taylor</a></div>
+  <input id="heightmapFile" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
+        "tweakpane": "https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.js"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { Pane } from 'tweakpane';
+    const DEFAULT_HEIGHTMAP_URL = 'assets/heightmap_512x512.png';
+    // Track mouse for hover effects
+    window.__mouseNdc = new THREE.Vector2(-2, -2);
+    window.addEventListener('mousemove', (e) => {
+      window.__mouseNdc.x = (e.clientX / window.innerWidth) * 2 - 1;
+      window.__mouseNdc.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    });
+    
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0e0f13);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 10, 18);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+    renderer.domElement.classList.add('drop-target');
+
+    const clock = new THREE.Clock();
+    const initialCamPos = new THREE.Vector3().copy(camera.position);
+    const initialCamQuat = new THREE.Quaternion().copy(camera.quaternion);
+    let defaultCamPos;
+    let defaultCamQuat;
+    
+
+    // Lights
+    const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+    scene.add(ambient);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.1);
+    dir.position.set(5, 10, 7);
+    scene.add(dir);
+
+    // Ground grid for scale reference
+    const grid = new THREE.GridHelper(200, 200, 0x33353a, 0x1e2026);
+    grid.material.opacity = 0.35;
+    grid.material.transparent = true;
+    grid.material.depthWrite = false;
+    grid.material.depthTest = false;
+    grid.visible = false;
+    scene.add(grid);
+
+    // Plane setup
+    const initialSize = 12; // default tile size
+    let segments = 256; // will be controlled by UI (subdivisions)
+
+    let plane = null; // unused after tiling in pointcloud mode
+    const pointMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: null },
+        uScale: { value: 2.8 },
+        uBias: { value: -2.8 * 0.5 },
+        uColor: { value: new THREE.Color(0x8a8f9a) },
+        uPointSize: { value: 2.0 },
+        uTime: { value: 0.0 },
+        uJitter: { value: 0.02 },
+        uMaskCenter: { value: new THREE.Vector2(0.0, 0.0) },
+        uMaskRadius: { value: 4.0 },
+        uMaskFeather: { value: 0.6 },
+        uHoverCenter: { value: new THREE.Vector2(9999.0, 9999.0) },
+        uHoverRadius: { value: 1.6 },
+        uHoverStrength: { value: 0.8 },
+        uHoverSnap: { value: 2.0 },
+        uHoverColor: { value: new THREE.Color(0xffcc55) },
+        // Fog uniforms expected by renderer when material.fog === true
+        fogColor: { value: new THREE.Color(0x0e0f13) },
+        fogNear: { value: 1 },
+        fogFar: { value: 1000 },
+        fogDensity: { value: 0.00025 }
+      },
+      transparent: true,
+      depthWrite: true,
+      blending: THREE.NormalBlending,
+      fog: false,
+      vertexShader: `
+        #include <uv_pars_vertex>
+        varying float vMaskAlpha;
+        varying float vHoverMix;
+        #include <fog_pars_vertex>
+        uniform sampler2D uMap;
+        uniform float uScale;
+        uniform float uBias;
+        uniform float uPointSize;
+        uniform float uTime;
+        uniform float uJitter;
+        uniform vec2 uMaskCenter;
+        uniform float uMaskRadius;
+        uniform float uMaskFeather;
+        uniform vec2 uHoverCenter;
+        uniform float uHoverRadius;
+        uniform float uHoverStrength;
+        uniform float uHoverSnap;
+        // hash-based 2D noise -> scalar in [-1,1]
+        float hash(vec2 p){
+          return -1.0 + 2.0 * fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+        void main() {
+          #include <uv_vertex>
+          vec3 p = position;
+          float h = 0.0;
+          #ifdef USE_UV
+          vec3 c = texture2D(uMap, vUv).rgb;
+          h = (c.r + c.g + c.b) / 3.0;
+          #endif
+          // apply small XY jitter in object space based on vUv
+          if (uJitter > 0.0) {
+            float jx = hash(vUv + 0.123) * uJitter;
+            float jz = hash(vUv + 4.567) * uJitter;
+            p.x += jx;
+            p.z += jz;
+          }
+          // base height
+          float baseY = h * uScale + uBias;
+          p.y = baseY;
+          vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+      gl_PointSize = max(1.0, uPointSize * (300.0 / max(1.0, -mvPosition.z)));
+          vec4 worldPos = modelMatrix * vec4(p, 1.0);
+          float d = length(worldPos.xz - uMaskCenter);
+          float edge0 = uMaskRadius;
+          float edge1 = uMaskRadius + max(0.0001, uMaskFeather);
+          vMaskAlpha = 1.0 - smoothstep(edge0, edge1, d);
+          // hover influence factor 0..1 with soft falloff
+          float hd = length(worldPos.xz - uHoverCenter);
+          float hEdge = uHoverRadius;
+          vHoverMix = 1.0 - smoothstep(hEdge, hEdge + 0.5, hd);
+          #include <fog_vertex>
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uColor;
+        uniform vec3 uHoverColor;
+        varying float vMaskAlpha;
+        varying float vHoverMix;
+        #include <fog_pars_fragment>
+        void main() {
+          vec2 pc = gl_PointCoord - 0.5;
+          float r = length(pc);
+          float disc = 1.0 - smoothstep(0.5, 0.55, r);
+          float alpha = disc * vMaskAlpha;
+          if (alpha <= 0.001) discard;
+          vec3 col = mix(uColor, uHoverColor, vHoverMix);
+          gl_FragColor = vec4(col, alpha);
+          #include <fog_fragment>
+        }
+      `
+    });
+    // Enable UV chunks in shader includes
+    pointMaterial.defines = pointMaterial.defines || {};
+    pointMaterial.defines.USE_UV = '';
+    
+
+    // (Trail system removed)
+
+    // Tiling with Points
+    let tilesPoints = [];
+    const state = { tileSize: initialSize, tilesX: 3, tilesZ: 3, scrollSpeed: 3 };
+    const scrollOffset = new THREE.Vector2(0, 0);
+
+    function buildBaseGeometry() {
+      const g = new THREE.PlaneGeometry(state.tileSize, state.tileSize, segments, segments);
+      g.rotateX(-Math.PI / 2);
+      return g;
+    }
+
+    function positiveModulo(v, m) { return ((v % m) + m) % m; }
+
+    function updateTileMatrices() {
+      if (!tilesPoints || tilesPoints.length === 0) return;
+      let idx = 0;
+      const offsetX = (state.tilesX - 1) * state.tileSize * 0.5;
+      const offsetZ = (state.tilesZ - 1) * state.tileSize * 0.5;
+      const modX = positiveModulo(scrollOffset.x, state.tileSize);
+      const modZ = positiveModulo(scrollOffset.y, state.tileSize);
+      for (let z = 0; z < state.tilesZ; z++) {
+        for (let x = 0; x < state.tilesX; x++) {
+          const px = (x * state.tileSize) - offsetX - modX;
+          const pz = (z * state.tileSize) - offsetZ - modZ;
+          const pts = tilesPoints[idx++];
+          if (pts) pts.position.set(px, 0, pz);
+        }
+      }
+    }
+
+    function rebuildTiling() {
+      if (tilesPoints && tilesPoints.length) {
+        for (const p of tilesPoints) {
+          scene.remove(p);
+          if (p.geometry) p.geometry.dispose();
+        }
+      }
+      tilesPoints = [];
+      const geometry = buildBaseGeometry();
+      geometry.deleteAttribute('normal');
+      geometry.deleteAttribute('tangent');
+      // Ensure each vertex becomes a point; PlaneGeometry already has indexed triangles.
+      // Convert to non-indexed so every vertex is unique for gl.POINTS
+      const nonIndexed = geometry.toNonIndexed();
+      nonIndexed.computeBoundingSphere();
+      for (let z = 0; z < state.tilesZ; z++) {
+        for (let x = 0; x < state.tilesX; x++) {
+          const pts = new THREE.Points(nonIndexed, pointMaterial);
+          pts.frustumCulled = false;
+          tilesPoints.push(pts);
+          scene.add(pts);
+        }
+      }
+      updateTileMatrices();
+    }
+
+    rebuildTiling();
+
+    // (Car and follower removed)
+
+    // (CPU height sampling removed)
+
+    // (Cursor/mouse following removed)
+
+    // UI elements
+    const fileInput = document.getElementById('heightmapFile');
+
+    // Tweakpane setup
+    const pane = new Pane({ title: 'Particle Landscape' });
+    
+    // Parameters object
+    const params = {
+      // Heightmap
+      terrainColor: '#8a8f9a',
+      scale: 1.4,
+      tileSize: 11,
+      tilesX: 1,
+      tilesZ: 3,
+      // Particles
+      pointSize: 0.01,
+      jitter: 0.02,
+      hoverRadius: 1.6,
+      hoverStrength: 0.8,
+      hoverSnap: 2.0,
+      hoverColor: '#ffcc55',
+      cols: 416,
+      rows: 416,
+      // Mask
+      maskRadius: 3.0,
+      maskFeather: 0.8,
+      // Animation
+      scrollSpeed: 0.6,
+      animateScroll: true,
+      // Camera
+      camYaw: 0,
+      camPitch: -41,
+      camFov: 90,
+      camHeight: 3.0,
+      camZ: 5.4,
+      // Fog
+      fogEnabled: true,
+      fogColor: '#0e0f13',
+      fogNear: 12,
+      fogFar: 1,
+    };
+
+    // Helper functions
+    const degToRad = (d) => d * Math.PI / 180;
+    const clampPitchDeg = (p) => Math.max(-89, Math.min(89, p));
+    function applyYawPitchDeg(yawDeg, pitchDeg) {
+      const yaw = degToRad(yawDeg);
+      const pitch = degToRad(clampPitchDeg(pitchDeg));
+      const e = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+      camera.quaternion.setFromEuler(e);
+    }
+
+    function clampPowerOfTwo(n) {
+      return Math.max(2, Math.min(2048, Math.floor(n)));
+    }
+
+    function applyFogFromParams() {
+      if (params.fogEnabled) {
+        scene.fog = new THREE.Fog(
+          params.fogColor, 
+          Math.min(params.fogNear, params.fogFar - 0.001), 
+          Math.max(params.fogNear + 0.001, params.fogFar)
+        );
+        scene.background = new THREE.Color(params.fogColor);
+      } else {
+        scene.fog = null;
+      }
+    }
+
+    // Heightmap folder
+    const heightmapFolder = pane.addFolder({ title: 'Heightmap', expanded: true });
+    heightmapFolder.addButton({ title: 'Load Heightmap...' }).on('click', () => {
+      fileInput.click();
+    });
+    heightmapFolder.addBinding(params, 'terrainColor', { view: 'color' }).on('change', (ev) => {
+      pointMaterial.uniforms.uColor.value.set(ev.value);
+    });
+    heightmapFolder.addBinding(params, 'scale', { min: 0, max: 8, step: 0.1 }).on('change', (ev) => {
+      pointMaterial.uniforms.uScale.value = ev.value;
+      pointMaterial.uniforms.uBias.value = -ev.value * 0.5;
+    });
+    heightmapFolder.addBinding(params, 'tileSize', { min: 2, max: 50, step: 1 }).on('change', (ev) => {
+      state.tileSize = Math.max(1, ev.value);
+      rebuildTiling();
+    });
+    heightmapFolder.addBinding(params, 'tilesX', { min: 1, max: 20, step: 1 }).on('change', (ev) => {
+      state.tilesX = Math.max(1, Math.min(20, ev.value));
+      rebuildTiling();
+    });
+    heightmapFolder.addBinding(params, 'tilesZ', { min: 1, max: 20, step: 1 }).on('change', (ev) => {
+      state.tilesZ = Math.max(1, Math.min(20, ev.value));
+      rebuildTiling();
+    });
+
+    // Particles folder
+    const particlesFolder = pane.addFolder({ title: 'Particles', expanded: true });
+    particlesFolder.addBinding(params, 'pointSize', { min: 0, max: 0.5, step: 0.01, label: 'Point Size' }).on('change', (ev) => {
+      pointMaterial.uniforms.uPointSize.value = ev.value;
+    });
+    particlesFolder.addBinding(params, 'jitter', { min: 0.0, max: 0.2, step: 0.001 }).on('change', (ev) => {
+      pointMaterial.uniforms.uJitter.value = ev.value;
+    });
+    particlesFolder.addBlade({ view: 'separator' });
+    particlesFolder.addBinding(params, 'hoverRadius', { min: 0.1, max: 10, step: 0.1, label: 'Hover Radius' }).on('change', (ev) => {
+      pointMaterial.uniforms.uHoverRadius.value = ev.value;
+    });
+    particlesFolder.addBinding(params, 'hoverStrength', { min: 0, max: 10, step: 0.1, label: 'Hover Strength' }).on('change', (ev) => {
+      pointMaterial.uniforms.uHoverStrength.value = ev.value;
+    });
+    particlesFolder.addBinding(params, 'hoverSnap', { min: 0.1, max: 10, step: 0.1, label: 'Hover Snap' }).on('change', (ev) => {
+      pointMaterial.uniforms.uHoverSnap.value = ev.value;
+    });
+    particlesFolder.addBinding(params, 'hoverColor', { view: 'color', label: 'Hover Color' }).on('change', (ev) => {
+      pointMaterial.uniforms.uHoverColor.value.set(ev.value);
+    });
+    particlesFolder.addBlade({ view: 'separator' });
+    particlesFolder.addBinding(params, 'cols', { min: 8, max: 1024, step: 8 }).on('change', (ev) => {
+      params.cols = clampPowerOfTwo(ev.value);
+      segments = Math.max(2, Math.max(params.cols, params.rows));
+      rebuildTiling();
+    });
+    particlesFolder.addBinding(params, 'rows', { min: 8, max: 1024, step: 8 }).on('change', (ev) => {
+      params.rows = clampPowerOfTwo(ev.value);
+      segments = Math.max(2, Math.max(params.cols, params.rows));
+      rebuildTiling();
+    });
+
+    // Mask folder
+    const maskFolder = pane.addFolder({ title: 'Mask', expanded: true });
+    maskFolder.addBinding(params, 'maskRadius', { min: 0.1, max: 20, step: 0.1, label: 'Mask Radius' }).on('change', (ev) => {
+      pointMaterial.uniforms.uMaskRadius.value = ev.value;
+    });
+    maskFolder.addBinding(params, 'maskFeather', { min: 0.0, max: 5, step: 0.1, label: 'Mask Feather' }).on('change', (ev) => {
+      pointMaterial.uniforms.uMaskFeather.value = ev.value;
+    });
+
+    // Animation folder
+    const animationFolder = pane.addFolder({ title: 'Animation', expanded: true });
+    animationFolder.addBinding(params, 'scrollSpeed', { min: -20, max: 20, step: 0.1, label: 'Scroll Speed' }).on('change', (ev) => {
+      state.scrollSpeed = ev.value;
+    });
+    animationFolder.addBinding(params, 'animateScroll', { label: 'Animate' });
+
+    // Camera folder
+    const cameraFolder = pane.addFolder({ title: 'Camera', expanded: true });
+    cameraFolder.addBinding(params, 'camYaw', { min: -180, max: 180, step: 1, label: 'Yaw' }).on('change', (ev) => {
+      applyYawPitchDeg(ev.value, params.camPitch);
+    });
+    cameraFolder.addBinding(params, 'camPitch', { min: -89, max: 89, step: 1, label: 'Pitch' }).on('change', (ev) => {
+      applyYawPitchDeg(params.camYaw, ev.value);
+    });
+    cameraFolder.addBinding(params, 'camFov', { min: 20, max: 100, step: 1, label: 'FOV' }).on('change', (ev) => {
+      camera.fov = ev.value;
+      camera.updateProjectionMatrix();
+    });
+    cameraFolder.addBinding(params, 'camHeight', { min: 0, max: 100, step: 0.1, label: 'Height' }).on('change', (ev) => {
+      camera.position.y = ev.value;
+    });
+    cameraFolder.addBinding(params, 'camZ', { min: -200, max: 200, step: 0.1, label: 'Camera Z' }).on('change', (ev) => {
+      camera.position.z = ev.value;
+    });
+    cameraFolder.addBlade({ view: 'separator' });
+    cameraFolder.addBinding(params, 'fogEnabled', { label: 'Fog Enabled' }).on('change', applyFogFromParams);
+    cameraFolder.addBinding(params, 'fogColor', { view: 'color', label: 'Fog Color' }).on('change', applyFogFromParams);
+    cameraFolder.addBinding(params, 'fogNear', { min: 0, max: 500, step: 1, label: 'Fog Near' }).on('change', applyFogFromParams);
+    cameraFolder.addBinding(params, 'fogFar', { min: 1, max: 1000, step: 1, label: 'Fog Far' }).on('change', applyFogFromParams);
+    cameraFolder.addBlade({ view: 'separator' });
+    cameraFolder.addButton({ title: 'Reset Camera' }).on('click', () => {
+      camera.position.copy(defaultCamPos);
+      camera.quaternion.copy(defaultCamQuat);
+      const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+      params.camYaw = Math.round(THREE.MathUtils.radToDeg(e.y));
+      params.camPitch = Math.round(THREE.MathUtils.radToDeg(e.x));
+      params.camFov = Math.round(camera.fov);
+      params.camHeight = camera.position.y;
+      params.camZ = camera.position.z;
+      pane.refresh();
+      scrollOffset.set(0, 0);
+      updateTileMatrices();
+    });
+
+    // ---- URL parameter configuration ----
+    // Allows setting values via query params and optionally hiding the UI
+    (function applyUrlParams() {
+      const urlParams = new URLSearchParams(window.location.search);
+
+      function setParam(key, paramName) {
+        if (urlParams.has(paramName)) {
+          const value = urlParams.get(paramName);
+          if (typeof params[key] === 'boolean') {
+            params[key] = value === '1' || value === 'true' || value === 'on';
+        } else {
+            params[key] = Number(value) || value;
+          }
+        }
+      }
+
+      // hide UI if ui=0
+      if (urlParams.get('ui') === '0') {
+        pane.hidden = true;
+      }
+
+      // common controls
+      setParam('scale', 'scale');
+      setParam('tileSize', 'tileSize');
+      setParam('tilesX', 'tilesX');
+      setParam('tilesZ', 'tilesZ');
+      setParam('pointSize', 'psize');
+      setParam('maskRadius', 'mask');
+      setParam('maskFeather', 'feather');
+      setParam('jitter', 'jitter');
+      setParam('hoverRadius', 'hR');
+      setParam('hoverStrength', 'hS');
+      setParam('hoverSnap', 'hSnap');
+      setParam('camYaw', 'yaw');
+      setParam('camPitch', 'pitch');
+      setParam('camFov', 'fov');
+      setParam('camHeight', 'height');
+      setParam('camZ', 'z');
+      setParam('scrollSpeed', 'scroll');
+      setParam('animateScroll', 'animate');
+      setParam('cols', 'cols');
+      setParam('rows', 'rows');
+      setParam('fogEnabled', 'fog');
+      setParam('fogNear', 'near');
+      setParam('fogFar', 'far');
+      // colors as hex
+      if (urlParams.has('terrain')) {
+        params.terrainColor = urlParams.get('terrain');
+      }
+      if (urlParams.has('fogColor')) {
+        params.fogColor = urlParams.get('fogColor');
+      }
+
+      // Refresh pane to show URL param values
+      pane.refresh();
+    })();
+
+    // Initialize camera and scene from param defaults
+    (function initFromDefaults() {
+      // Apply yaw/pitch
+      applyYawPitchDeg(params.camYaw, params.camPitch);
+      // Apply FOV
+      camera.fov = params.camFov;
+      camera.updateProjectionMatrix();
+      // Apply height & camera Z
+      camera.position.y = params.camHeight;
+      camera.position.z = params.camZ;
+      // Apply scroll speed
+      state.scrollSpeed = params.scrollSpeed;
+      // Grid visibility
+      grid.visible = false;
+      // Scale
+      pointMaterial.uniforms.uScale.value = params.scale;
+      pointMaterial.uniforms.uBias.value = -params.scale * 0.5;
+      // Point color default
+      pointMaterial.uniforms.uColor.value.set(params.terrainColor);
+      // Jitter default
+      pointMaterial.uniforms.uJitter.value = params.jitter;
+      // Point defaults
+      pointMaterial.uniforms.uPointSize.value = params.pointSize;
+      pointMaterial.uniforms.uMaskRadius.value = params.maskRadius;
+      pointMaterial.uniforms.uMaskFeather.value = params.maskFeather;
+      // Hover defaults
+      pointMaterial.uniforms.uHoverRadius.value = params.hoverRadius;
+      pointMaterial.uniforms.uHoverStrength.value = params.hoverStrength;
+      pointMaterial.uniforms.uHoverSnap.value = params.hoverSnap;
+      pointMaterial.uniforms.uHoverColor.value.set(params.hoverColor);
+      
+      // Record defaults for Reset
+      defaultCamPos = new THREE.Vector3().copy(camera.position);
+      defaultCamQuat = new THREE.Quaternion().copy(camera.quaternion);
+      // Initialize fog state
+      applyFogFromParams();
+      // Compile shader after defines updates
+      pointMaterial.needsUpdate = true;
+      // Load default heightmap texture
+      const textureLoader = new THREE.TextureLoader();
+      textureLoader.load(
+        DEFAULT_HEIGHTMAP_URL,
+        (tex) => {
+          applyHeightmapTexture(tex).catch((err) => console.error('Failed to apply default heightmap', err));
+        },
+        undefined,
+        (err) => {
+          console.error('Failed to load default heightmap', err);
+        }
+      );
+    })();
+
+    // Static camera: no keyboard/mouse movement
+
+    async function createTextureFromFile(file) {
+      try {
+        const bitmap = await createImageBitmap(file);
+        const texture = new THREE.Texture(bitmap);
+        texture.needsUpdate = true;
+        return texture;
+      } catch (err) {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result);
+          fr.onerror = reject;
+          fr.readAsDataURL(file);
+        });
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.decoding = 'async';
+          i.onload = () => resolve(i);
+          i.onerror = (e) => reject(e);
+          i.src = dataUrl;
+        });
+        const texture = new THREE.Texture(img);
+        texture.needsUpdate = true;
+        return texture;
+      }
+    }
+
+    let currentHeightmapTexture = null;
+
+    async function applyHeightmapTexture(texture) {
+      if (currentHeightmapTexture) {
+        currentHeightmapTexture.dispose();
+      }
+      currentHeightmapTexture = texture;
+      texture.colorSpace = THREE.NoColorSpace; // treat as data
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      // NPOT safety: use clamp + no mipmaps; POT can repeat+mips
+      const img = texture.image;
+      const isPOT = img && ( (img.width & (img.width - 1)) === 0 ) && ( (img.height & (img.height - 1)) === 0 );
+      if (isPOT) {
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+      } else {
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+      }
+      texture.magFilter = THREE.LinearFilter;
+      texture.needsUpdate = true;
+
+      pointMaterial.uniforms.uMap.value = texture;
+      pointMaterial.uniforms.uBias.value = -pointMaterial.uniforms.uScale.value * 0.5;
+      pointMaterial.needsUpdate = true;
+      rebuildTiling();
+    }
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      try {
+        const texture = await createTextureFromFile(file);
+        await applyHeightmapTexture(texture);
+        console.log('Heightmap loaded:', file.name);
+      } catch (err) {
+        console.error('Failed to load heightmap texture', err);
+      }
+    });
+
+    function handleDropFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      createTextureFromFile(file)
+        .then(applyHeightmapTexture)
+        .catch((err) => console.error('Failed to load dropped heightmap', err));
+    }
+
+    renderer.domElement.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      renderer.domElement.classList.add('drag-over');
+    });
+
+    renderer.domElement.addEventListener('dragleave', () => {
+      renderer.domElement.classList.remove('drag-over');
+    });
+
+    renderer.domElement.addEventListener('drop', (e) => {
+      e.preventDefault();
+      renderer.domElement.classList.remove('drag-over');
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) {
+        handleDropFile(file);
+      }
+    });
+
+    // Resize handling
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Animate
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      pointMaterial.uniforms.uTime.value = performance.now() * 0.001;
+      // Update hover center from mouse ray on ground plane
+      // reuse a simple ray each frame based on last mouse NDC
+      if (!window.__raycaster) window.__raycaster = new THREE.Raycaster();
+      if (!window.__mouseNdc) window.__mouseNdc = new THREE.Vector2(-2, -2);
+      const ray = window.__raycaster;
+      ray.setFromCamera(window.__mouseNdc, camera);
+      const hit = new THREE.Vector3();
+      const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      if (ray.ray.intersectPlane(ground, hit)) {
+        pointMaterial.uniforms.uHoverCenter.value.set(hit.x, hit.z);
+      } else {
+        pointMaterial.uniforms.uHoverCenter.value.set(9999.0, 9999.0);
+      }
+      if (params.animateScroll && tilesPoints && tilesPoints.length) {
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        forward.y = 0;
+        if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+        forward.normalize();
+        const step = state.scrollSpeed * delta;
+        scrollOffset.x += forward.x * step;
+        scrollOffset.y += forward.z * step;
+        updateTileMatrices();
+      }
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
+
+
