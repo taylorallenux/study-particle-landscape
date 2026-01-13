@@ -257,6 +257,9 @@
       height: -2.5,  // height offset from camera
       size: 0.4,     // scale of the airplane
       distance: 3.5, // distance ahead of camera
+      // Chase cam world position (used when chase cam is on)
+      worldPos: new THREE.Vector3(0, 1.5, 0),
+      baseAltitude: 1.5, // base flying altitude in chase cam mode
       // Collision state
       isColliding: false,
       collisionShake: 0,
@@ -354,6 +357,8 @@
     function updateAirplane(delta) {
       if (!airplaneGroup || !airplaneState.enabled) return;
       
+      const isChaseMode = params.chaseCamEnabled;
+      
       // Handle horizontal input - update target position
       if (keysPressed.left) {
         airplaneState.targetX = Math.max(-airplaneState.maxOffset, airplaneState.targetX - airplaneState.speed * delta);
@@ -386,27 +391,46 @@
       const targetPitch = -dy * 0.8; // nose up when climbing, down when diving
       airplaneState.pitch += (targetPitch - airplaneState.pitch) * Math.min(1, 6 * delta);
       
-      // Position airplane relative to camera
-      // Get camera's forward direction on XZ plane
+      // Get forward direction for movement and orientation
       const forward = new THREE.Vector3();
       camera.getWorldDirection(forward);
       forward.y = 0;
+      if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
       forward.normalize();
       
       // Get right vector
       const right = new THREE.Vector3();
       right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
       
-      // Position airplane in front of and slightly below camera
-      airplaneGroup.position.copy(camera.position);
-      airplaneGroup.position.addScaledVector(forward, airplaneState.distance);
-      airplaneGroup.position.addScaledVector(right, airplaneState.x);
-      airplaneGroup.position.y = camera.position.y + airplaneState.height + airplaneState.y;
+      if (isChaseMode) {
+        // Chase cam mode: airplane strafes left/right, always faces forward
+        // Use fixed forward direction (scroll direction is -Z)
+        const chaseForward = new THREE.Vector3(0, 0, -1);
+        const chaseRight = new THREE.Vector3(1, 0, 0);
+        
+        // Strafe position directly using airplaneState.x
+        airplaneState.worldPos.x = airplaneState.x;
+        airplaneState.worldPos.y = airplaneState.baseAltitude + airplaneState.y;
+        // Z stays at 0 (airplane stays in place, terrain scrolls past)
+        
+        // Set airplane position from world pos
+        airplaneGroup.position.copy(airplaneState.worldPos);
+        
+        // Override forward for orientation (always face forward)
+        forward.copy(chaseForward);
+        right.copy(chaseRight);
+      } else {
+        // Normal mode: airplane positioned relative to camera
+        airplaneGroup.position.copy(camera.position);
+        airplaneGroup.position.addScaledVector(forward, airplaneState.distance);
+        airplaneGroup.position.addScaledVector(right, airplaneState.x);
+        airplaneGroup.position.y = camera.position.y + airplaneState.height + airplaneState.y;
+      }
       
       // Update scale
       airplaneGroup.scale.set(airplaneState.size, airplaneState.size, airplaneState.size);
       
-      // Orient airplane to face camera's forward direction with tilt and pitch
+      // Orient airplane to face forward direction with tilt and pitch
       const lookTarget = airplaneGroup.position.clone().add(forward);
       airplaneGroup.lookAt(lookTarget);
       airplaneGroup.rotation.z = airplaneState.tilt;
@@ -606,6 +630,11 @@
       fogColor: '#0e0f13',
       fogNear: 12,
       fogFar: 1,
+      // Camera
+      chaseCamEnabled: false,
+      chaseCamDistance: 2.5,
+      chaseCamHeight: 0.8,
+      chaseCamAltitude: 1.5,
       // Airplane
       airplaneEnabled: false,
       airplaneSpeed: 3,
@@ -819,9 +848,36 @@
       params.camFov = Math.round(camera.fov);
       params.camHeight = camera.position.y;
       params.camZ = camera.position.z;
+      params.chaseCamEnabled = false;
       pane.refresh();
       scrollOffset.set(0, 0);
       updateTileMatrices();
+    });
+    cameraFolder.addBlade({ view: 'separator' });
+    cameraFolder.addBinding(params, 'chaseCamEnabled', { label: 'Chase Cam' }).on('change', (ev) => {
+      if (ev.value) {
+        // Auto-enable airplane when chase cam is turned on
+        if (!airplaneState.enabled) {
+          params.airplaneEnabled = true;
+          airplaneState.enabled = true;
+          if (airplaneGroup) airplaneGroup.visible = true;
+        }
+        // Reset airplane state for chase cam
+        airplaneState.x = 0;
+        airplaneState.targetX = 0;
+        airplaneState.y = 0;
+        airplaneState.targetY = 0;
+        airplaneState.tilt = 0;
+        airplaneState.pitch = 0;
+        // Initialize world position based on current camera
+        airplaneState.worldPos.set(0, airplaneState.baseAltitude, -3);
+        pane.refresh();
+      }
+    });
+    cameraFolder.addBinding(params, 'chaseCamDistance', { min: 0.5, max: 8, step: 0.1, label: 'Chase Distance' });
+    cameraFolder.addBinding(params, 'chaseCamHeight', { min: 0.2, max: 3, step: 0.1, label: 'Chase Height' });
+    cameraFolder.addBinding(params, 'chaseCamAltitude', { min: 0.5, max: 5, step: 0.1, label: 'Flight Altitude' }).on('change', (ev) => {
+      airplaneState.baseAltitude = ev.value;
     });
 
     // ---- URL parameter configuration ----
@@ -1138,6 +1194,30 @@
       } else {
         pointMaterial.uniforms.uAirplanePos.value.set(9999, 9999, 9999);
       }
+      
+      // Chase cam logic
+      if (params.chaseCamEnabled && airplaneGroup && airplaneState.enabled) {
+        // Fixed forward direction (airplane always faces -Z)
+        const chaseForward = new THREE.Vector3(0, 0, -1);
+        
+        // Position camera behind the airplane (behind = +Z direction)
+        const chaseDist = params.chaseCamDistance;
+        const chaseHeight = params.chaseCamHeight;
+        
+        const targetCamPos = airplaneGroup.position.clone();
+        targetCamPos.z += chaseDist; // Behind is +Z since forward is -Z
+        targetCamPos.y = airplaneGroup.position.y + chaseHeight;
+        
+        // Smooth camera movement
+        camera.position.lerp(targetCamPos, Math.min(1, 8 * delta));
+        
+        // Look at a point ahead of the airplane
+        const lookTarget = airplaneGroup.position.clone();
+        lookTarget.z -= 2; // Ahead is -Z
+        lookTarget.y = airplaneGroup.position.y;
+        camera.lookAt(lookTarget);
+      }
+      
       renderer.render(scene, camera);
     }
     animate();
