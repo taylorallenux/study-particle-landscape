@@ -138,6 +138,85 @@
       window.__mouseNdc.set(-2, -2);
     });
 
+    // Mouse scroll for camera distance control
+    // Min/max limits for each camera mode
+    const cameraLimits = {
+      chase: { min: 0.5, max: 8, param: 'chaseCamDistance', step: 0.2 },
+      topdown: { min: 3, max: 20, param: 'topCamHeight', step: 0.5 },
+      isometric: { min: 2, max: 15, param: 'isoCamDistance', step: 0.3 }
+    };
+    
+    canvasContainer.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const mode = params?.cameraMode;
+      if (!mode || !cameraLimits[mode]) return;
+      
+      const limits = cameraLimits[mode];
+      const direction = e.deltaY > 0 ? 1 : -1; // scroll down = zoom out (increase distance)
+      const newValue = params[limits.param] + direction * limits.step;
+      params[limits.param] = Math.max(limits.min, Math.min(limits.max, newValue));
+      
+      // Update pane to reflect change
+      if (typeof pane !== 'undefined' && pane.refresh) {
+        pane.refresh();
+      }
+    }, { passive: false });
+
+    // Right-click drag for camera orbit around airplane
+    const cameraOrbit = {
+      isDragging: false,
+      lastX: 0,
+      lastY: 0,
+      azimuth: 0,       // horizontal angle (radians)
+      elevation: 0,     // vertical angle offset (radians) - for pitch adjustment
+      sensitivity: 0.005,
+      // Min/max elevation for each mode (radians)
+      elevationLimits: {
+        chase: { min: -0.3, max: 0.5 },
+        topdown: { min: -0.2, max: 0.2 },  // limited for top-down
+        isometric: { min: -0.4, max: 0.6 }
+      }
+    };
+
+    canvasContainer.addEventListener('mousedown', (e) => {
+      if (e.button === 2) { // Right click
+        cameraOrbit.isDragging = true;
+        cameraOrbit.lastX = e.clientX;
+        cameraOrbit.lastY = e.clientY;
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!cameraOrbit.isDragging) return;
+      
+      const deltaX = e.clientX - cameraOrbit.lastX;
+      const deltaY = e.clientY - cameraOrbit.lastY;
+      cameraOrbit.lastX = e.clientX;
+      cameraOrbit.lastY = e.clientY;
+      
+      // Update azimuth (horizontal orbit)
+      cameraOrbit.azimuth -= deltaX * cameraOrbit.sensitivity;
+      
+      // Update elevation (vertical angle) with limits based on mode
+      const mode = params?.cameraMode || 'chase';
+      const limits = cameraOrbit.elevationLimits[mode] || { min: -0.5, max: 0.5 };
+      cameraOrbit.elevation = Math.max(limits.min, Math.min(limits.max, 
+        cameraOrbit.elevation + deltaY * cameraOrbit.sensitivity
+      ));
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 2) {
+        cameraOrbit.isDragging = false;
+      }
+    });
+
+    // Prevent context menu on right-click
+    canvasContainer.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+
     const clock = new THREE.Clock();
     const initialCamPos = new THREE.Vector3().copy(camera.position);
     const initialCamQuat = new THREE.Quaternion().copy(camera.quaternion);
@@ -955,6 +1034,9 @@
       airplaneState.tilt = 0;
       airplaneState.pitch = 0;
       airplaneState.worldPos.set(0, airplaneState.baseAltitude, 0);
+      // Reset camera orbit when switching modes
+      cameraOrbit.azimuth = 0;
+      cameraOrbit.elevation = 0;
       
       pane.refresh();
     }
@@ -1085,7 +1167,7 @@
       airplaneSize: 0.4,
       airplaneDistance: 3.5,
       // Hover highlights
-      mouseHoverEnabled: true,
+      mouseHoverEnabled: false,
       airplaneHoverEnabled: true,
       airplaneHoverRadius: 2.0,
       airplaneColorSafe: '#00ffaa',   // cyan-green when high/safe
@@ -1318,6 +1400,9 @@
       params.camHeight = camera.position.y;
       params.camZ = camera.position.z;
       params.cameraMode = 'chase';
+      // Reset camera orbit
+      cameraOrbit.azimuth = 0;
+      cameraOrbit.elevation = 0;
       pane.refresh();
       scrollOffset.set(0, 0);
       updateTileMatrices();
@@ -1713,52 +1798,82 @@
         pointMaterial.uniforms.uRainParticleScale.value = radarState.rainParticleScale;
       }
       
-      // Camera mode logic
+      // Camera mode logic with orbit support
+      // Use stable airplane position (worldPos) to avoid shake affecting camera
       if (params.cameraMode === 'chase' && airplaneGroup && airplaneState.enabled) {
-        // Chase cam: positioned behind the airplane
+        // Chase cam: positioned behind the airplane with orbit
         const chaseDist = params.chaseCamDistance;
         const chaseHeight = params.chaseCamHeight;
         
-        const targetCamPos = airplaneGroup.position.clone();
-        targetCamPos.z += chaseDist; // Behind is +Z since forward is -Z
-        targetCamPos.y = airplaneGroup.position.y + chaseHeight;
+        // Use stable airplane position
+        const stablePos = airplaneState.worldPos;
+        
+        // Apply orbit azimuth to position camera around airplane
+        const orbitX = Math.sin(cameraOrbit.azimuth) * chaseDist;
+        const orbitZ = Math.cos(cameraOrbit.azimuth) * chaseDist;
+        // Apply elevation to height
+        const elevationOffset = cameraOrbit.elevation * chaseDist;
+        
+        const targetCamPos = new THREE.Vector3(
+          stablePos.x + orbitX,
+          stablePos.y + chaseHeight + elevationOffset,
+          stablePos.z + orbitZ
+        );
         
         // Smooth camera movement
         camera.position.lerp(targetCamPos, Math.min(1, 8 * delta));
         
-        // Look at a point ahead of the airplane
-        const lookTarget = airplaneGroup.position.clone();
-        lookTarget.z -= 2; // Ahead is -Z
-        lookTarget.y = airplaneGroup.position.y;
-        camera.lookAt(lookTarget);
+        // Look at the stable airplane position
+        camera.lookAt(stablePos);
       } else if (params.cameraMode === 'topdown' && airplaneGroup && airplaneState.enabled) {
-        // Top-down cam: straight above the airplane looking down
+        // Top-down cam: above the airplane with orbit rotation
         const topHeight = params.topCamHeight;
         
-        const targetCamPos = airplaneGroup.position.clone();
-        targetCamPos.y = airplaneGroup.position.y + topHeight;
+        // Use stable airplane position (worldPos) instead of shake-affected position
+        const stablePos = airplaneState.worldPos;
+        
+        // Apply orbit for slight offset from directly above
+        const orbitOffset = cameraOrbit.elevation * topHeight * 0.5;
+        const orbitX = Math.sin(cameraOrbit.azimuth) * orbitOffset;
+        const orbitZ = Math.cos(cameraOrbit.azimuth) * orbitOffset;
+        
+        const targetCamPos = new THREE.Vector3(
+          stablePos.x + orbitX,
+          stablePos.y + topHeight,
+          stablePos.z + orbitZ
+        );
         
         // Smooth camera movement
         camera.position.lerp(targetCamPos, Math.min(1, 8 * delta));
         
-        // Explicitly set rotation to look straight down (avoid gimbal lock from lookAt)
-        // Rotation: -90 degrees on X axis to point down, 0 on Y and Z
-        camera.rotation.set(-Math.PI / 2, 0, 0);
+        // For top-down, set rotation directly instead of lookAt to avoid gimbal lock
+        // Rotate to look straight down (-Y), with Z as forward direction
+        camera.rotation.set(-Math.PI / 2, 0, -cameraOrbit.azimuth);
       } else if (params.cameraMode === 'isometric' && airplaneGroup && airplaneState.enabled) {
-        // Isometric cam: classic view from behind and above at an angle
+        // Isometric cam: view from behind and above with orbit
         const isoDist = params.isoCamDistance;
         const isoHeight = params.isoCamHeight;
         
-        const targetCamPos = airplaneGroup.position.clone();
-        targetCamPos.z += isoDist; // Behind is +Z since forward is -Z
-        targetCamPos.y = airplaneGroup.position.y + isoHeight;
+        // Use stable airplane position
+        const stablePos = airplaneState.worldPos;
+        
+        // Apply orbit azimuth to position camera around airplane
+        const orbitX = Math.sin(cameraOrbit.azimuth) * isoDist;
+        const orbitZ = Math.cos(cameraOrbit.azimuth) * isoDist;
+        // Apply elevation to height
+        const elevationOffset = cameraOrbit.elevation * isoDist;
+        
+        const targetCamPos = new THREE.Vector3(
+          stablePos.x + orbitX,
+          stablePos.y + isoHeight + elevationOffset,
+          stablePos.z + orbitZ
+        );
         
         // Smooth camera movement
         camera.position.lerp(targetCamPos, Math.min(1, 8 * delta));
         
-        // Look at the airplane
-        const lookTarget = airplaneGroup.position.clone();
-        camera.lookAt(lookTarget);
+        // Look at the stable airplane position
+        camera.lookAt(stablePos);
       }
       
       renderer.render(scene, camera);
