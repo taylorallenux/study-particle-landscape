@@ -390,10 +390,13 @@
           vec3 c = texture2D(uMap, vUv).rgb;
           h = (c.r + c.g + c.b) / 3.0;
           #endif
-          // apply small XY jitter in object space based on vUv
+          // apply small XY jitter based on world position for seamless tiling
           if (uJitter > 0.0) {
-            float jx = hash(vUv + 0.123) * uJitter;
-            float jz = hash(vUv + 4.567) * uJitter;
+            // Use world position for hash to ensure continuity across tile boundaries
+            vec4 worldPosJitter = modelMatrix * vec4(p, 1.0);
+            vec2 worldXZ = worldPosJitter.xz;
+            float jx = hash(worldXZ + 0.123) * uJitter;
+            float jz = hash(worldXZ + 4.567) * uJitter;
             p.x += jx;
             p.z += jz;
           }
