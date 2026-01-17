@@ -290,7 +290,7 @@
         uRainParticleWidth: { value: 0.08 },
         uRainParticleHeight: { value: 0.45 },
         uRainParticleScale: { value: 25.0 },
-        uAirplaneColorFar: { value: new THREE.Color(0x00ffaa) },  // cyan-green when high/safe
+        uAirplaneColorFar: { value: new THREE.Color(0xff9000) },  // orange when high/safe
         uAirplaneColorClose: { value: new THREE.Color(0xff0000) }, // pure red when low/danger
         // Fog uniforms expected by renderer when material.fog === true
         fogColor: { value: new THREE.Color(0x0e0f13) },
@@ -591,7 +591,7 @@
       colorFadeDuration: 1.0,   // time to crossfade from rain to ring color
       // Visual ring settings
       visualRingEnabled: true,
-      visualRingColor: '#00ffff',
+      visualRingColor: '#ffa500',
       visualRingWidth: 0.07,
       visualRingOpacity: 1.0,
       // Rain particle shape
@@ -1170,7 +1170,7 @@
       mouseHoverEnabled: false,
       airplaneHoverEnabled: true,
       airplaneHoverRadius: 2.0,
-      airplaneColorSafe: '#00ffaa',   // cyan-green when high/safe
+      airplaneColorSafe: '#ff9000',   // orange when high/safe
       airplaneColorDanger: '#ff0000', // red when low/danger
     };
 
