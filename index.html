@@ -254,6 +254,9 @@
       #controlsBar .controls {
         display: none; /* Hide keyboard hints on mobile */
       }
+      #controlsBar .mobile-hint {
+        display: block; /* Show tap hint on mobile */
+      }
       #controlsBar .credit {
         margin-left: 0;
       }
@@ -264,6 +267,11 @@
         font-size: 9px;
         padding: 4px 8px;
       }
+    }
+    
+    /* Hide mobile hint on desktop */
+    #controlsBar .mobile-hint {
+      display: none;
     }
   </style>
 </head>
@@ -330,6 +338,7 @@
       <span class="control-item"><kbd>Scroll</kbd> Zoom</span>
       <span class="control-item"><kbd>Right-Click Drag</kbd> Orbit</span>
     </div>
+    <span class="mobile-hint">Tap anywhere to ping sonar</span>
     <span class="credit">Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></span>
   </div>
   <input id="heightmapFile" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
@@ -511,6 +520,36 @@
     canvasContainer.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
+
+    // Touch support for mobile: tap to trigger radar pulse
+    let touchStartTime = 0;
+    let touchStartPos = { x: 0, y: 0 };
+    const TAP_THRESHOLD_MS = 300;  // Max time for a tap
+    const TAP_THRESHOLD_PX = 20;   // Max movement for a tap
+    
+    canvasContainer.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        touchStartTime = performance.now();
+        touchStartPos.x = e.touches[0].clientX;
+        touchStartPos.y = e.touches[0].clientY;
+      }
+    }, { passive: true });
+    
+    canvasContainer.addEventListener('touchend', (e) => {
+      const touchDuration = performance.now() - touchStartTime;
+      
+      // Check if this was a quick tap (not a drag or long press)
+      if (touchDuration < TAP_THRESHOLD_MS && e.changedTouches.length === 1) {
+        const dx = e.changedTouches[0].clientX - touchStartPos.x;
+        const dy = e.changedTouches[0].clientY - touchStartPos.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // If finger didn't move much, treat as a tap and trigger radar
+        if (distance < TAP_THRESHOLD_PX) {
+          triggerRadarPulse();
+        }
+      }
+    }, { passive: true });
 
     const clock = new THREE.Clock();
     const initialCamPos = new THREE.Vector3().copy(camera.position);
