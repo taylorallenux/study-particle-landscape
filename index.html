@@ -5,9 +5,73 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Three.js Heightmap Pointcloud (Masked)</title>
   <style>
-    html, body { margin: 0; height: 100%; background: #0e0f13; color: #e6e6e6; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    html, body { 
+      margin: 0; 
+      height: 100%; 
+      background: #0e0f13; 
+      color: #e6e6e6; 
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      overflow: hidden;
+    }
+    #app-container {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #canvas-container canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    canvas.drop-target {
+      outline: 1px solid transparent;
+      transition: outline-color 0.2s ease;
+    }
+    canvas.drop-target.drag-over {
+      outline: 2px dashed rgba(155, 187, 221, 0.85);
+    }
+    #panel-container {
+      width: 280px;
+      min-width: 280px;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background: rgba(20, 22, 28, 0.95);
+      border-left: 1px solid rgba(255, 255, 255, 0.08);
+      scrollbar-width: thin;
+      scrollbar-color: #444 #1a1c22;
+    }
+    #panel-container::-webkit-scrollbar {
+      width: 8px;
+    }
+    #panel-container::-webkit-scrollbar-track {
+      background: #1a1c22;
+    }
+    #panel-container::-webkit-scrollbar-thumb {
+      background: #444;
+      border-radius: 4px;
+    }
+    #panel-container::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
+    /* Override Tweakpane container styles */
+    #panel-container .tp-dfwv {
+      width: 100% !important;
+      position: relative !important;
+      right: auto !important;
+      top: auto !important;
+    }
     #overlayInfo {
-      position: fixed;
+      position: absolute;
       bottom: 12px;
       left: 12px;
       font-size: 12px;
@@ -21,22 +85,17 @@
     #overlayInfo a {
       color: #9bd;
     }
-    canvas.drop-target {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-      outline: 1px solid transparent;
-      transition: outline-color 0.2s ease;
-    }
-    canvas.drop-target.drag-over {
-      outline: 2px dashed rgba(155, 187, 221, 0.85);
-    }
     a, a:visited { color: #9bd; text-decoration: none; }
     a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
-  <div id="overlayInfo">Drag a heightmap onto the canvas to replace. Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></div>
+  <div id="app-container">
+    <div id="canvas-container">
+      <div id="overlayInfo">Drag a heightmap onto the canvas to replace. Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></div>
+    </div>
+    <div id="panel-container"></div>
+  </div>
   <input id="heightmapFile" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
 
   <script type="importmap">
@@ -52,25 +111,32 @@
     import * as THREE from 'three';
     import { Pane } from 'tweakpane';
     const DEFAULT_HEIGHTMAP_URL = 'assets/heightmap_512x512.png';
-    // Track mouse for hover effects
+    // Track mouse for hover effects (canvasContainer defined after scene setup)
     window.__mouseNdc = new THREE.Vector2(-2, -2);
-    window.addEventListener('mousemove', (e) => {
-      window.__mouseNdc.x = (e.clientX / window.innerWidth) * 2 - 1;
-      window.__mouseNdc.y = -(e.clientY / window.innerHeight) * 2 + 1;
-    });
     
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0e0f13);
 
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const canvasContainer = document.getElementById('canvas-container');
+    const camera = new THREE.PerspectiveCamera(55, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
     camera.position.set(0, 10, 18);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+    renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+    canvasContainer.appendChild(renderer.domElement);
     renderer.domElement.classList.add('drop-target');
+
+    // Mouse tracking for hover effects
+    canvasContainer.addEventListener('mousemove', (e) => {
+      const rect = canvasContainer.getBoundingClientRect();
+      window.__mouseNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      window.__mouseNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    });
+    canvasContainer.addEventListener('mouseleave', () => {
+      window.__mouseNdc.set(-2, -2);
+    });
 
     const clock = new THREE.Clock();
     const initialCamPos = new THREE.Vector3().copy(camera.position);
@@ -122,6 +188,29 @@
         uAirplanePos: { value: new THREE.Vector3(9999, 9999, 9999) },
         uAirplaneHoverEnabled: { value: 0.0 },
         uAirplaneHoverRadius: { value: 2.0 },
+        // Radar pulse
+        uRadarActive: { value: 0.0 },
+        uRadarOrigin: { value: new THREE.Vector3(0, 0, 0) },
+        uRadarRadius: { value: 0.0 },
+        uRadarRingWidth: { value: 0.6 },
+        uRadarFade: { value: 1.0 },
+        // Radar rain animation
+        uRadarRainHeight: { value: 41.0 },     // How high particles start above final position
+        uRadarRainDuration: { value: 0.35 },   // How long the fall animation takes (seconds)
+        uRadarTime: { value: 0.0 },            // Current time since radar started
+        uRadarExpandSpeed: { value: 9.72 },    // Units per second for ring expansion
+        uRadarShowRing: { value: 0.0 },        // Whether to show the colored ring effect
+        uRadarRingFeather: { value: 0.1 },     // Softness of the ring edges
+        // Rain and ring colors
+        uRainColor: { value: new THREE.Color(0xbff4ff) },           // Color of falling particles
+        uRadarRingColorLow: { value: new THREE.Color(0x00ccff) },   // Ring color for valleys
+        uRadarRingColorMid: { value: new THREE.Color(0x00ff80) },   // Ring color for mid
+        uRadarRingColorHigh: { value: new THREE.Color(0xffee33) },  // Ring color for peaks
+        uRainColorFadeDuration: { value: 1.0 },                      // Time to crossfade from rain to ring color
+        // Rain particle shape
+        uRainParticleWidth: { value: 0.08 },
+        uRainParticleHeight: { value: 0.45 },
+        uRainParticleScale: { value: 25.0 },
         uAirplaneColorFar: { value: new THREE.Color(0x00ffaa) },  // cyan-green when high/safe
         uAirplaneColorClose: { value: new THREE.Color(0xff0000) }, // pure red when low/danger
         // Fog uniforms expected by renderer when material.fog === true
@@ -133,13 +222,17 @@
       transparent: true,
       depthWrite: true,
       blending: THREE.NormalBlending,
-      fog: false,
+      fog: true,
       vertexShader: `
         #include <uv_pars_vertex>
         varying float vMaskAlpha;
         varying float vHoverMix;
         varying float vAirplaneMix;
         varying float vAirplaneProximity;
+        varying float vRadarMix;
+        varying float vRadarHeight;
+        varying float vRadarRainOpacity;
+        varying float vRainColorBlend;
         #include <fog_pars_vertex>
         uniform sampler2D uMap;
         uniform float uScale;
@@ -158,6 +251,19 @@
         uniform vec3 uAirplanePos;
         uniform float uAirplaneHoverEnabled;
         uniform float uAirplaneHoverRadius;
+        // Radar pulse
+        uniform float uRadarActive;
+        uniform vec3 uRadarOrigin;
+        uniform float uRadarRadius;
+        uniform float uRadarRingWidth;
+        uniform float uRadarFade;
+        uniform float uRadarRainHeight;
+        uniform float uRadarRainDuration;
+        uniform float uRadarTime;
+        uniform float uRadarExpandSpeed;
+        uniform float uRadarRingFeather;
+        uniform float uRainColorFadeDuration;
+        uniform float uRainParticleScale;
         // hash-based 2D noise -> scalar in [-1,1]
         float hash(vec2 p){
           return -1.0 + 2.0 * fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -200,6 +306,67 @@
           // Use signed distance - particles ABOVE airplane are far (green), BELOW or at same level are close (red)
           float vertDist = uAirplanePos.y - worldPos.y; // positive when airplane is above particle
           vAirplaneProximity = 1.0 - clamp(vertDist / 0.6, 0.0, 1.0); // 0=airplane high above, 1=at or below particle
+          
+          // Radar pulse - expanding ring from origin with rain animation
+          float radarDist = length(worldPos.xz - uRadarOrigin.xz);
+          float innerEdge = uRadarRadius - uRadarRingWidth;
+          float outerEdge = uRadarRadius + uRadarRingWidth;
+          
+          // Calculate when the radar ring reached this particle
+          float ringArrivalTime = radarDist / max(0.1, uRadarExpandSpeed);
+          float timeSinceArrival = uRadarTime - ringArrivalTime;
+          
+          // Default opacity and color blend (fully visible, final color when not in radar animation)
+          vRadarRainOpacity = 1.0;
+          vRainColorBlend = 1.0;
+          
+          // Rain animation: only apply to particles OUTSIDE the mask (additive reveal)
+          // Particles inside mask stay in place, particles outside get rain effect
+          bool isOutsideMask = vMaskAlpha < 0.5;
+          
+          if (uRadarActive > 0.5 && timeSinceArrival > -0.1 && isOutsideMask) {
+            // Add slight randomized delay based on position for organic feel
+            float randDelay = hash(vUv * 7.89) * 0.15;
+            float delayedTime = timeSinceArrival - randDelay;
+            float delayedProgress = clamp(delayedTime / max(0.01, uRadarRainDuration), 0.0, 1.0);
+            // Easing: fast start, smooth landing (ease-out cubic)
+            float delayedEased = 1.0 - pow(1.0 - delayedProgress, 3.0);
+            float rainOffset = uRadarRainHeight * (1.0 - delayedEased);
+            
+            // Opacity ramps from 0 to 1 as particles fall into place
+            vRadarRainOpacity = delayedEased;
+            
+            // Color crossfade: starts after landing, transitions over uRainColorFadeDuration
+            // Time since particle landed (delayedEased reached 1.0)
+            float landingTime = randDelay + uRadarRainDuration;
+            float timeSinceLanding = max(0.0, delayedTime - uRadarRainDuration);
+            float colorFadeProgress = clamp(timeSinceLanding / max(0.01, uRainColorFadeDuration), 0.0, 1.0);
+            // 0 = rain color, 1 = ring/final color
+            vRainColorBlend = colorFadeProgress;
+            
+            // Update world position Y for the rain effect
+            worldPos.y += rainOffset;
+            // Also update the gl_Position and point size
+            vec3 animatedP = p;
+            animatedP.y = baseY + rainOffset;
+            mvPosition = modelViewMatrix * vec4(animatedP, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+            // Scale up point size while falling (for visible rain dashes), shrink to normal when landed
+            // Use same curve as shape blend - stay large while falling, shrink at the end
+            float sizeBlend = smoothstep(0.7, 1.0, delayedEased);
+            float fallScale = mix(uRainParticleScale, 1.0, sizeBlend);
+            gl_PointSize = max(1.0, uPointSize * fallScale * (300.0 / max(1.0, -mvPosition.z)));
+          }
+          
+          // Ring effect: particles within the ring band (with feathering)
+          float feather = max(0.1, uRadarRingFeather);
+          float ringMix = smoothstep(innerEdge - feather, innerEdge, radarDist) 
+                        * (1.0 - smoothstep(outerEdge, outerEdge + feather, radarDist));
+          // Also show particles that the ring has passed over (persistent reveal)
+          float revealMix = 1.0 - smoothstep(outerEdge - feather * 0.5, outerEdge + feather, radarDist);
+          vRadarMix = uRadarActive * max(ringMix * 1.5, revealMix * 0.8);
+          // Height for coloring (normalized 0-1 based on final world Y, not animated)
+          vRadarHeight = clamp((baseY + 1.0) / 3.0, 0.0, 1.0);
           #include <fog_vertex>
         }
       `,
@@ -208,17 +375,51 @@
         uniform vec3 uHoverColor;
         uniform vec3 uAirplaneColorFar;
         uniform vec3 uAirplaneColorClose;
+        uniform float uRadarFade;
+        uniform float uRadarShowRing;
+        uniform vec3 uRainColor;
+        uniform vec3 uRadarRingColorLow;
+        uniform vec3 uRadarRingColorMid;
+        uniform vec3 uRadarRingColorHigh;
+        uniform float uRainParticleWidth;
+        uniform float uRainParticleHeight;
         varying float vMaskAlpha;
         varying float vHoverMix;
         varying float vAirplaneMix;
         varying float vAirplaneProximity;
+        varying float vRadarMix;
+        varying float vRadarHeight;
+        varying float vRadarRainOpacity;
+        varying float vRainColorBlend;
         #include <fog_pars_fragment>
         void main() {
           vec2 pc = gl_PointCoord - 0.5;
           float r = length(pc);
-          float disc = 1.0 - smoothstep(0.5, 0.55, r);
-          float alpha = disc * vMaskAlpha;
+          
+          // Disc shape (normal point)
+          float disc = 1.0 - smoothstep(0.45, 0.5, r);
+          
+          // Vertical line shape (rain streak) - elongated dash
+          // Narrow in X (width), tall in Y (height)
+          float xMask = 1.0 - smoothstep(uRainParticleWidth, uRainParticleWidth + 0.04, abs(pc.x));
+          float yMask = 1.0 - smoothstep(uRainParticleHeight, uRainParticleHeight + 0.05, abs(pc.y));
+          float lineMask = xMask * yMask;
+          
+          // Shape transition: stay as line longer, then quickly morph to disc at the end
+          // Use a curve that keeps it as a line for most of the fall
+          float shapeBlend = smoothstep(0.7, 1.0, vRadarRainOpacity);
+          float shape = mix(lineMask, disc, shapeBlend);
+          
+          // Radar can reveal particles beyond the mask
+          float radarAlpha = vRadarMix * uRadarFade;
+          float effectiveAlpha = max(vMaskAlpha, radarAlpha);
+          
+          // Rain opacity: start more visible (0.5) and ramp to full
+          // This ensures lines are visible during the fall
+          float rainAlpha = mix(0.5, 1.0, vRadarRainOpacity);
+          float alpha = shape * effectiveAlpha * rainAlpha;
           if (alpha <= 0.001) discard;
+          
           // Start with base color
           vec3 col = uColor;
           // Apply mouse hover color
@@ -226,6 +427,27 @@
           // Apply airplane hover - blend between far (orange) and close (red) based on proximity
           vec3 airplaneColor = mix(uAirplaneColorFar, uAirplaneColorClose, vAirplaneProximity);
           col = mix(col, airplaneColor, vAirplaneMix);
+          
+          // Rain color - applied to falling particles, crossfades to ring/base color
+          // vRainColorBlend: 0 = rain color, 1 = final color
+          if (vRainColorBlend < 1.0) {
+            // Calculate the target color (ring color if enabled, otherwise base)
+            vec3 targetColor = col;
+            if (uRadarShowRing > 0.5) {
+              targetColor = vRadarHeight < 0.5 
+                ? mix(uRadarRingColorLow, uRadarRingColorMid, vRadarHeight * 2.0)
+                : mix(uRadarRingColorMid, uRadarRingColorHigh, (vRadarHeight - 0.5) * 2.0);
+            }
+            // Crossfade from rain color to target color
+            col = mix(uRainColor, targetColor, vRainColorBlend);
+          } else if (uRadarShowRing > 0.5) {
+            // Fully transitioned, apply ring color if enabled
+            vec3 radarColor = vRadarHeight < 0.5 
+              ? mix(uRadarRingColorLow, uRadarRingColorMid, vRadarHeight * 2.0)
+              : mix(uRadarRingColorMid, uRadarRingColorHigh, (vRadarHeight - 0.5) * 2.0);
+            col = mix(col, radarColor, radarAlpha * 0.9);
+          }
+          
           gl_FragColor = vec4(col, alpha);
           #include <fog_fragment>
         }
@@ -269,6 +491,125 @@
     // Store airplane materials for color change on collision
     let airplaneMaterials = [];
     const keysPressed = { left: false, right: false, up: false, down: false };
+    
+    // Radar pulse state
+    const radarState = {
+      active: false,
+      startTime: 0,
+      expandDuration: 3.6,    // seconds to expand to full radius
+      persistDuration: 2.0,   // seconds to persist after expansion
+      fadeDuration: 0.5,      // seconds to fade out
+      maxRadius: 35.0,        // max expansion radius
+      expandSpeed: 9.72,      // units per second (maxRadius / expandDuration)
+      rainHeight: 41.0,       // how high particles start above their final position
+      rainDuration: 0.35,     // how long the fall animation takes
+      showRing: false,        // whether to show the colored pulse ring
+      ringFeather: 0.1,       // softness of the ring edges
+      rainColor: '#bff4ff',   // color of falling particles
+      ringColorLow: '#00ccff',  // ring color for valleys
+      ringColorMid: '#00ff80',  // ring color for mid heights
+      ringColorHigh: '#ffee33', // ring color for peaks
+      colorFadeDuration: 1.0,   // time to crossfade from rain to ring color
+      // Visual ring settings
+      visualRingEnabled: true,
+      visualRingColor: '#00ffff',
+      visualRingWidth: 0.07,
+      visualRingOpacity: 1.0,
+      // Rain particle shape
+      rainParticleWidth: 0.08,
+      rainParticleHeight: 0.45,
+      rainParticleScale: 25.0
+    };
+    
+    // Visual expanding ring mesh
+    let visualRing = null;
+    let visualRingMaterial = null;
+    
+    function createVisualRing() {
+      // Create ring geometry - we'll update inner/outer radius during animation
+      const geometry = new THREE.RingGeometry(0.1, 0.2, 128);
+      geometry.rotateX(-Math.PI / 2); // Lay flat on XZ plane
+      
+      visualRingMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: new THREE.Color(radarState.visualRingColor) },
+          uOpacity: { value: radarState.visualRingOpacity },
+          uInnerRadius: { value: 0.1 },
+          uOuterRadius: { value: 0.2 },
+          uFeather: { value: 0.05 }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          varying vec3 vLocalPos;
+          void main() {
+            vUv = uv;
+            vLocalPos = position;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 uColor;
+          uniform float uOpacity;
+          uniform float uInnerRadius;
+          uniform float uOuterRadius;
+          uniform float uFeather;
+          varying vec2 vUv;
+          varying vec3 vLocalPos;
+          void main() {
+            // Distance from center in local space (ring geometry is centered at local origin)
+            float dist = length(vLocalPos.xz);
+            
+            // Soft edges
+            float innerAlpha = smoothstep(uInnerRadius - uFeather, uInnerRadius + uFeather, dist);
+            float outerAlpha = 1.0 - smoothstep(uOuterRadius - uFeather, uOuterRadius + uFeather, dist);
+            float alpha = innerAlpha * outerAlpha * uOpacity;
+            
+            // Glow effect - brighter at edges
+            float edgeDist = min(dist - uInnerRadius, uOuterRadius - dist);
+            float edgeGlow = 1.0 + 0.5 * (1.0 - smoothstep(0.0, uFeather * 2.0, edgeDist));
+            
+            gl_FragColor = vec4(uColor * edgeGlow, alpha);
+          }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      
+      visualRing = new THREE.Mesh(geometry, visualRingMaterial);
+      visualRing.visible = false;
+      visualRing.renderOrder = 999; // Render on top
+      scene.add(visualRing);
+    }
+    
+    function updateVisualRing(currentRadius, fade) {
+      if (!visualRing || !radarState.visualRingEnabled) {
+        if (visualRing) visualRing.visible = false;
+        return;
+      }
+      
+      const width = radarState.visualRingWidth;
+      const innerRadius = Math.max(0.01, currentRadius - width);
+      const outerRadius = currentRadius + width;
+      
+      // Recreate geometry with new radii
+      visualRing.geometry.dispose();
+      visualRing.geometry = new THREE.RingGeometry(innerRadius, outerRadius, 128);
+      visualRing.geometry.rotateX(-Math.PI / 2);
+      
+      // Update material uniforms
+      visualRingMaterial.uniforms.uInnerRadius.value = innerRadius;
+      visualRingMaterial.uniforms.uOuterRadius.value = outerRadius;
+      visualRingMaterial.uniforms.uOpacity.value = radarState.visualRingOpacity * fade;
+      visualRingMaterial.uniforms.uColor.value.set(radarState.visualRingColor);
+      visualRingMaterial.uniforms.uFeather.value = width * 0.3;
+      
+      visualRing.visible = true;
+    }
+    
+    // Initialize visual ring
+    createVisualRing();
 
     function createAirplane() {
       // Create a retro wireframe arrow pointing forward
@@ -357,7 +698,9 @@
     function updateAirplane(delta) {
       if (!airplaneGroup || !airplaneState.enabled) return;
       
-      const isChaseMode = params.chaseCamEnabled;
+      const isChaseMode = params.cameraMode === 'chase';
+      const isTopdownMode = params.cameraMode === 'topdown';
+      const isIsoMode = params.cameraMode === 'isometric';
       
       // Handle horizontal input - update target position
       if (keysPressed.left) {
@@ -402,8 +745,8 @@
       const right = new THREE.Vector3();
       right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
       
-      if (isChaseMode) {
-        // Chase cam mode: airplane strafes left/right, always faces forward
+      if (isChaseMode || isTopdownMode || isIsoMode) {
+        // All airplane-following modes: airplane strafes left/right, always faces forward
         // Use fixed forward direction (scroll direction is -Z)
         const chaseForward = new THREE.Vector3(0, 0, -1);
         const chaseRight = new THREE.Vector3(1, 0, 0);
@@ -489,6 +832,10 @@
 
     // Keyboard controls for airplane
     window.addEventListener('keydown', (e) => {
+      // Prevent spacebar from scrolling page
+      if (e.code === 'Space') {
+        e.preventDefault();
+      }
       if (!airplaneState.enabled) return;
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
         keysPressed.left = true;
@@ -521,7 +868,96 @@
       if (e.code === 'ArrowDown' || e.code === 'KeyS') {
         keysPressed.down = false;
       }
+      // G key cycles camera modes
+      if (e.code === 'KeyG') {
+        cycleCameraMode();
+      }
+      // Spacebar triggers radar pulse
+      if (e.code === 'Space') {
+        triggerRadarPulse();
+        e.preventDefault();
+      }
     });
+    
+    function triggerRadarPulse() {
+      // Get origin from airplane position or camera position
+      let origin;
+      if (airplaneGroup && airplaneState.enabled) {
+        // Read directly from airplaneState which has the current position
+        const isChaseStyle = params.cameraMode === 'chase' || params.cameraMode === 'topdown' || params.cameraMode === 'isometric';
+        if (isChaseStyle) {
+          // In chase modes, use the strafe position (x) and z=0 since terrain scrolls
+          origin = new THREE.Vector3(
+            airplaneState.x,
+            airplaneState.baseAltitude + airplaneState.y,
+            0
+          );
+        } else {
+          origin = airplaneGroup.position.clone();
+        }
+      } else {
+        origin = camera.position.clone();
+        origin.y = 0;
+      }
+      
+      radarState.active = true;
+      radarState.startTime = performance.now() * 0.001;
+      // Update expand speed based on current settings
+      radarState.expandSpeed = radarState.maxRadius / radarState.expandDuration;
+      
+      pointMaterial.uniforms.uRadarActive.value = 1.0;
+      pointMaterial.uniforms.uRadarOrigin.value.copy(origin);
+      pointMaterial.uniforms.uRadarRadius.value = 0.0;
+      pointMaterial.uniforms.uRadarFade.value = 1.0;
+      pointMaterial.uniforms.uRadarTime.value = 0.0;
+      pointMaterial.uniforms.uRadarRainHeight.value = radarState.rainHeight;
+      pointMaterial.uniforms.uRadarRainDuration.value = radarState.rainDuration;
+      pointMaterial.uniforms.uRadarExpandSpeed.value = radarState.expandSpeed;
+      pointMaterial.uniforms.uRadarShowRing.value = radarState.showRing ? 1.0 : 0.0;
+      pointMaterial.uniforms.uRadarRingFeather.value = radarState.ringFeather;
+      pointMaterial.uniforms.uRainColor.value.set(radarState.rainColor);
+      pointMaterial.uniforms.uRadarRingColorLow.value.set(radarState.ringColorLow);
+      pointMaterial.uniforms.uRadarRingColorMid.value.set(radarState.ringColorMid);
+      pointMaterial.uniforms.uRadarRingColorHigh.value.set(radarState.ringColorHigh);
+      pointMaterial.uniforms.uRainColorFadeDuration.value = radarState.colorFadeDuration;
+      pointMaterial.uniforms.uRainParticleWidth.value = radarState.rainParticleWidth;
+      pointMaterial.uniforms.uRainParticleHeight.value = radarState.rainParticleHeight;
+      pointMaterial.uniforms.uRainParticleScale.value = radarState.rainParticleScale;
+      
+      // Position visual ring at origin, at airplane altitude
+      if (visualRing) {
+        visualRing.position.set(origin.x, origin.y, origin.z);
+        visualRing.visible = radarState.visualRingEnabled;
+      }
+    }
+    
+    function cycleCameraMode() {
+      const modes = ['chase', 'topdown', 'isometric'];
+      const currentIndex = modes.indexOf(params.cameraMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      setCameraMode(modes[nextIndex]);
+    }
+    
+    function setCameraMode(mode) {
+      params.cameraMode = mode;
+      
+      // All modes now follow the airplane, so always enable it
+      if (!airplaneState.enabled) {
+        params.airplaneEnabled = true;
+        airplaneState.enabled = true;
+        if (airplaneGroup) airplaneGroup.visible = true;
+      }
+      // Reset airplane state when switching modes
+      airplaneState.x = 0;
+      airplaneState.targetX = 0;
+      airplaneState.y = 0;
+      airplaneState.targetY = 0;
+      airplaneState.tilt = 0;
+      airplaneState.pitch = 0;
+      airplaneState.worldPos.set(0, airplaneState.baseAltitude, 0);
+      
+      pane.refresh();
+    }
 
     // Initialize airplane
     initAirplane();
@@ -594,7 +1030,8 @@
     const fileInput = document.getElementById('heightmapFile');
 
     // Tweakpane setup
-    const pane = new Pane({ title: 'Particle Landscape' });
+    const panelContainer = document.getElementById('panel-container');
+    const pane = new Pane({ title: 'Particle Landscape', container: panelContainer });
     
     // Parameters object
     const params = {
@@ -630,11 +1067,14 @@
       fogColor: '#0e0f13',
       fogNear: 12,
       fogFar: 1,
-      // Camera
-      chaseCamEnabled: false,
+      // Camera modes: 'chase', 'topdown', 'isometric'
+      cameraMode: 'chase',
       chaseCamDistance: 2.5,
       chaseCamHeight: 0.8,
       chaseCamAltitude: 1.5,
+      topCamHeight: 8,
+      isoCamDistance: 6,
+      isoCamHeight: 4,
       // Airplane
       airplaneEnabled: false,
       airplaneSpeed: 3,
@@ -814,6 +1254,35 @@
       value: '↑↓←→ or WASD to fly',
     });
     airplaneHint.disabled = true;
+    
+    // Radar folder
+    const radarFolder = pane.addFolder({ title: 'Radar (Spacebar)', expanded: false });
+    radarFolder.addButton({ title: '⚡ Trigger Radar Pulse' }).on('click', triggerRadarPulse);
+    radarFolder.addBinding(radarState, 'showRing', { label: 'Show Color Ring' });
+    radarFolder.addBinding(radarState, 'maxRadius', { min: 10, max: 50, step: 1, label: 'Max Radius' });
+    radarFolder.addBinding(radarState, 'expandDuration', { min: 0.5, max: 5, step: 0.1, label: 'Expand Time' });
+    radarFolder.addBinding(radarState, 'persistDuration', { min: 1, max: 8, step: 0.5, label: 'Persist Time' });
+    radarFolder.addBinding(radarState, 'fadeDuration', { min: 0.5, max: 3, step: 0.1, label: 'Fade Time' });
+    radarFolder.addBinding(pointMaterial.uniforms.uRadarRingWidth, 'value', { min: 0.5, max: 5, step: 0.1, label: 'Ring Width' });
+    radarFolder.addBinding(radarState, 'ringFeather', { min: 0.1, max: 5, step: 0.1, label: 'Ring Feather' });
+    radarFolder.addBlade({ view: 'separator' });
+    radarFolder.addBinding(radarState, 'rainHeight', { min: 2, max: 50, step: 0.5, label: 'Rain Height' });
+    radarFolder.addBinding(radarState, 'rainDuration', { min: 0.1, max: 1.5, step: 0.05, label: 'Rain Speed' });
+    radarFolder.addBlade({ view: 'separator' });
+    radarFolder.addBinding(radarState, 'rainColor', { view: 'color', label: 'Rain Color' });
+    radarFolder.addBinding(radarState, 'colorFadeDuration', { min: 0.1, max: 3, step: 0.1, label: 'Color Fade Time' });
+    radarFolder.addBinding(radarState, 'ringColorLow', { view: 'color', label: 'Ring Low' });
+    radarFolder.addBinding(radarState, 'ringColorMid', { view: 'color', label: 'Ring Mid' });
+    radarFolder.addBinding(radarState, 'ringColorHigh', { view: 'color', label: 'Ring High' });
+    radarFolder.addBlade({ view: 'separator' });
+    radarFolder.addBinding(radarState, 'rainParticleWidth', { min: 0.02, max: 0.3, step: 0.01, label: 'Rain Width' });
+    radarFolder.addBinding(radarState, 'rainParticleHeight', { min: 0.1, max: 0.5, step: 0.01, label: 'Rain Height' });
+    radarFolder.addBinding(radarState, 'rainParticleScale', { min: 5, max: 50, step: 1, label: 'Rain Size' });
+    radarFolder.addBlade({ view: 'separator' });
+    radarFolder.addBinding(radarState, 'visualRingEnabled', { label: 'Visual Ring' });
+    radarFolder.addBinding(radarState, 'visualRingColor', { view: 'color', label: 'V-Ring Color' });
+    radarFolder.addBinding(radarState, 'visualRingWidth', { min: 0.02, max: 1.0, step: 0.01, label: 'V-Ring Width' });
+    radarFolder.addBinding(radarState, 'visualRingOpacity', { min: 0.1, max: 1.0, step: 0.05, label: 'V-Ring Opacity' });
 
     // Camera folder
     const cameraFolder = pane.addFolder({ title: 'Camera', expanded: true });
@@ -848,34 +1317,23 @@
       params.camFov = Math.round(camera.fov);
       params.camHeight = camera.position.y;
       params.camZ = camera.position.z;
-      params.chaseCamEnabled = false;
+      params.cameraMode = 'chase';
       pane.refresh();
       scrollOffset.set(0, 0);
       updateTileMatrices();
     });
     cameraFolder.addBlade({ view: 'separator' });
-    cameraFolder.addBinding(params, 'chaseCamEnabled', { label: 'Chase Cam' }).on('change', (ev) => {
-      if (ev.value) {
-        // Auto-enable airplane when chase cam is turned on
-        if (!airplaneState.enabled) {
-          params.airplaneEnabled = true;
-          airplaneState.enabled = true;
-          if (airplaneGroup) airplaneGroup.visible = true;
-        }
-        // Reset airplane state for chase cam
-        airplaneState.x = 0;
-        airplaneState.targetX = 0;
-        airplaneState.y = 0;
-        airplaneState.targetY = 0;
-        airplaneState.tilt = 0;
-        airplaneState.pitch = 0;
-        // Initialize world position based on current camera
-        airplaneState.worldPos.set(0, airplaneState.baseAltitude, -3);
-        pane.refresh();
-      }
+    cameraFolder.addBinding(params, 'cameraMode', { 
+      label: 'Camera Mode (G)', 
+      options: { 'Chase': 'chase', 'Top-Down': 'topdown', 'Isometric': 'isometric' }
+    }).on('change', (ev) => {
+      setCameraMode(ev.value);
     });
     cameraFolder.addBinding(params, 'chaseCamDistance', { min: 0.5, max: 8, step: 0.1, label: 'Chase Distance' });
     cameraFolder.addBinding(params, 'chaseCamHeight', { min: 0.2, max: 3, step: 0.1, label: 'Chase Height' });
+    cameraFolder.addBinding(params, 'topCamHeight', { min: 3, max: 20, step: 0.5, label: 'Top-Down Height' });
+    cameraFolder.addBinding(params, 'isoCamDistance', { min: 2, max: 15, step: 0.5, label: 'Iso Distance' });
+    cameraFolder.addBinding(params, 'isoCamHeight', { min: 1, max: 10, step: 0.5, label: 'Iso Height' });
     cameraFolder.addBinding(params, 'chaseCamAltitude', { min: 0.5, max: 5, step: 0.1, label: 'Flight Altitude' }).on('change', (ev) => {
       airplaneState.baseAltitude = ev.value;
     });
@@ -1152,9 +1610,11 @@
 
     // Resize handling
     window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      const width = canvasContainer.clientWidth;
+      const height = canvasContainer.clientHeight;
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(width, height);
     });
 
     // Animate
@@ -1191,16 +1651,71 @@
       // Update airplane hover position for shader
       if (airplaneGroup && airplaneState.enabled) {
         pointMaterial.uniforms.uAirplanePos.value.copy(airplaneGroup.position);
+        // Update mask center to follow airplane in chase-style modes
+        const isChaseStyle = params.cameraMode === 'chase' || params.cameraMode === 'topdown' || params.cameraMode === 'isometric';
+        if (isChaseStyle) {
+          pointMaterial.uniforms.uMaskCenter.value.set(airplaneState.worldPos.x, airplaneState.worldPos.z);
+        }
       } else {
         pointMaterial.uniforms.uAirplanePos.value.set(9999, 9999, 9999);
       }
       
-      // Chase cam logic
-      if (params.chaseCamEnabled && airplaneGroup && airplaneState.enabled) {
-        // Fixed forward direction (airplane always faces -Z)
-        const chaseForward = new THREE.Vector3(0, 0, -1);
+      // Update radar pulse
+      if (radarState.active) {
+        const now = performance.now() * 0.001;
+        const elapsed = now - radarState.startTime;
+        const totalDuration = radarState.expandDuration + radarState.persistDuration + radarState.fadeDuration;
         
-        // Position camera behind the airplane (behind = +Z direction)
+        // Update time uniform for rain animation
+        pointMaterial.uniforms.uRadarTime.value = elapsed;
+        
+        let currentRadius = 0;
+        let currentFade = 1.0;
+        
+        if (elapsed < radarState.expandDuration) {
+          // Expanding phase
+          const expandProgress = elapsed / radarState.expandDuration;
+          currentRadius = expandProgress * radarState.maxRadius;
+          currentFade = 1.0;
+          pointMaterial.uniforms.uRadarRadius.value = currentRadius;
+          pointMaterial.uniforms.uRadarFade.value = currentFade;
+        } else if (elapsed < radarState.expandDuration + radarState.persistDuration) {
+          // Persist phase - fully expanded, holding
+          currentRadius = radarState.maxRadius;
+          currentFade = 1.0;
+          pointMaterial.uniforms.uRadarRadius.value = currentRadius;
+          pointMaterial.uniforms.uRadarFade.value = currentFade;
+        } else if (elapsed < totalDuration) {
+          // Fade out phase
+          const fadeProgress = (elapsed - radarState.expandDuration - radarState.persistDuration) / radarState.fadeDuration;
+          currentRadius = radarState.maxRadius;
+          currentFade = 1.0 - fadeProgress;
+          pointMaterial.uniforms.uRadarRadius.value = currentRadius;
+          pointMaterial.uniforms.uRadarFade.value = currentFade;
+        } else {
+          // Done
+          radarState.active = false;
+          pointMaterial.uniforms.uRadarActive.value = 0.0;
+          pointMaterial.uniforms.uRadarFade.value = 0.0;
+          if (visualRing) visualRing.visible = false;
+        }
+        
+        // Update visual ring - keep it positioned at radar origin
+        if (radarState.active && visualRing) {
+          const origin = pointMaterial.uniforms.uRadarOrigin.value;
+          visualRing.position.set(origin.x, origin.y, origin.z);
+          updateVisualRing(currentRadius, currentFade);
+        }
+        
+        // Update rain particle shape uniforms in real-time
+        pointMaterial.uniforms.uRainParticleWidth.value = radarState.rainParticleWidth;
+        pointMaterial.uniforms.uRainParticleHeight.value = radarState.rainParticleHeight;
+        pointMaterial.uniforms.uRainParticleScale.value = radarState.rainParticleScale;
+      }
+      
+      // Camera mode logic
+      if (params.cameraMode === 'chase' && airplaneGroup && airplaneState.enabled) {
+        // Chase cam: positioned behind the airplane
         const chaseDist = params.chaseCamDistance;
         const chaseHeight = params.chaseCamHeight;
         
@@ -1215,6 +1730,34 @@
         const lookTarget = airplaneGroup.position.clone();
         lookTarget.z -= 2; // Ahead is -Z
         lookTarget.y = airplaneGroup.position.y;
+        camera.lookAt(lookTarget);
+      } else if (params.cameraMode === 'topdown' && airplaneGroup && airplaneState.enabled) {
+        // Top-down cam: straight above the airplane looking down
+        const topHeight = params.topCamHeight;
+        
+        const targetCamPos = airplaneGroup.position.clone();
+        targetCamPos.y = airplaneGroup.position.y + topHeight;
+        
+        // Smooth camera movement
+        camera.position.lerp(targetCamPos, Math.min(1, 8 * delta));
+        
+        // Explicitly set rotation to look straight down (avoid gimbal lock from lookAt)
+        // Rotation: -90 degrees on X axis to point down, 0 on Y and Z
+        camera.rotation.set(-Math.PI / 2, 0, 0);
+      } else if (params.cameraMode === 'isometric' && airplaneGroup && airplaneState.enabled) {
+        // Isometric cam: classic view from behind and above at an angle
+        const isoDist = params.isoCamDistance;
+        const isoHeight = params.isoCamHeight;
+        
+        const targetCamPos = airplaneGroup.position.clone();
+        targetCamPos.z += isoDist; // Behind is +Z since forward is -Z
+        targetCamPos.y = airplaneGroup.position.y + isoHeight;
+        
+        // Smooth camera movement
+        camera.position.lerp(targetCamPos, Math.min(1, 8 * delta));
+        
+        // Look at the airplane
+        const lookTarget = airplaneGroup.position.clone();
         camera.lookAt(lookTarget);
       }
       
