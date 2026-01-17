@@ -70,20 +70,46 @@
       right: auto !important;
       top: auto !important;
     }
-    #overlayInfo {
-      position: absolute;
-      bottom: 12px;
-      left: 12px;
-      font-size: 12px;
-      color: #b0b5bd;
-      background: rgba(20, 22, 28, 0.75);
-      padding: 6px 10px;
-      border-radius: 8px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-      z-index: 10;
+    #controlsBar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 280px;
+      font-size: 11px;
+      color: #000;
+      background: #ff9000;
+      padding: 4px 12px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-weight: 500;
     }
-    #overlayInfo a {
-      color: #9bd;
+    #controlsBar .controls {
+      display: flex;
+      gap: 16px;
+      flex: 1;
+    }
+    #controlsBar .control-item {
+      white-space: nowrap;
+    }
+    #controlsBar .control-item kbd {
+      background: rgba(0, 0, 0, 0.15);
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-family: inherit;
+      font-weight: 600;
+    }
+    #controlsBar .credit {
+      margin-left: auto;
+      white-space: nowrap;
+    }
+    #controlsBar a {
+      color: #000;
+      text-decoration: underline;
+    }
+    #controlsBar a:hover {
+      opacity: 0.7;
     }
     a, a:visited { color: #9bd; text-decoration: none; }
     a:hover { text-decoration: underline; }
@@ -92,9 +118,18 @@
 <body>
   <div id="app-container">
     <div id="canvas-container">
-      <div id="overlayInfo">Drag a heightmap onto the canvas to replace. Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></div>
     </div>
     <div id="panel-container"></div>
+  </div>
+  <div id="controlsBar">
+    <div class="controls">
+      <span class="control-item"><kbd>Space</kbd> Ping Sonar</span>
+      <span class="control-item"><kbd>G</kbd> Change Camera</span>
+      <span class="control-item"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Fly</span>
+      <span class="control-item"><kbd>Scroll</kbd> Zoom</span>
+      <span class="control-item"><kbd>Right-Click Drag</kbd> Orbit</span>
+    </div>
+    <span class="credit">Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></span>
   </div>
   <input id="heightmapFile" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
 
@@ -543,7 +578,7 @@
     let airplane = null;
     let airplaneGroup = null;
     const airplaneState = {
-      enabled: false,
+      enabled: true,
       x: 0,          // current X position (world space offset from center)
       targetX: 0,    // target X position
       y: 0,          // current Y offset (altitude adjustment)
@@ -1046,7 +1081,7 @@
 
     // Tiling with Points
     let tilesPoints = [];
-    const state = { tileSize: initialSize, tilesX: 3, tilesZ: 3, scrollSpeed: 3 };
+    const state = { tileSize: 12, tilesX: 7, tilesZ: 10, scrollSpeed: 0.6 };
     const scrollOffset = new THREE.Vector2(0, 0);
 
     function buildBaseGeometry() {
@@ -1119,10 +1154,10 @@
     const params = {
       // Heightmap
       terrainColor: '#8a8f9a',
-      scale: 1.4,
-      tileSize: 11,
-      tilesX: 1,
-      tilesZ: 3,
+      scale: 2.3,
+      tileSize: 12,
+      tilesX: 7,
+      tilesZ: 10,
       // Particles
       pointSize: 0.01,
       jitter: 0.02,
@@ -1133,8 +1168,8 @@
       cols: 416,
       rows: 416,
       // Mask
-      maskRadius: 3.0,
-      maskFeather: 0.8,
+      maskRadius: 0.1,
+      maskFeather: 0.0,
       // Animation
       scrollSpeed: 0.6,
       animateScroll: true,
@@ -1151,14 +1186,14 @@
       fogFar: 1,
       // Camera modes: 'chase', 'topdown', 'isometric'
       cameraMode: 'chase',
-      chaseCamDistance: 2.5,
+      chaseCamDistance: 3.3,
       chaseCamHeight: 0.8,
       chaseCamAltitude: 1.5,
-      topCamHeight: 8,
-      isoCamDistance: 6,
-      isoCamHeight: 4,
+      topCamHeight: 7.0,
+      isoCamDistance: 2.0,
+      isoCamHeight: 4.0,
       // Airplane
-      airplaneEnabled: false,
+      airplaneEnabled: true,
       airplaneSpeed: 3,
       airplaneMaxOffset: 5.5,
       airplaneVertSpeed: 2,
@@ -1169,7 +1204,7 @@
       // Hover highlights
       mouseHoverEnabled: false,
       airplaneHoverEnabled: true,
-      airplaneHoverRadius: 2.0,
+      airplaneHoverRadius: 0.5,
       airplaneColorSafe: '#ff9000',   // orange when high/safe
       airplaneColorDanger: '#ff0000', // red when low/danger
     };
@@ -1324,6 +1359,7 @@
     });
     airplaneFolder.addBinding(params, 'airplaneColorSafe', { view: 'color', label: 'Safe Color' }).on('change', (ev) => {
       pointMaterial.uniforms.uAirplaneColorFar.value.set(ev.value);
+      document.getElementById('controlsBar').style.background = ev.value;
     });
     airplaneFolder.addBinding(params, 'airplaneColorDanger', { view: 'color', label: 'Danger Color' }).on('change', (ev) => {
       pointMaterial.uniforms.uAirplaneColorClose.value.set(ev.value);
@@ -1514,6 +1550,8 @@
       // Airplane hover defaults
       pointMaterial.uniforms.uAirplaneHoverEnabled.value = params.airplaneHoverEnabled ? 1.0 : 0.0;
       pointMaterial.uniforms.uAirplaneHoverRadius.value = params.airplaneHoverRadius;
+      // Set controls bar color from Safe Color
+      document.getElementById('controlsBar').style.background = params.airplaneColorSafe;
       
       // Record defaults for Reset
       defaultCamPos = new THREE.Vector3().copy(camera.position);
