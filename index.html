@@ -13,6 +13,131 @@
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji";
       overflow: hidden;
     }
+    /* Mobile Lock Screen */
+    #mobile-lock-screen {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(145deg, #0e0f13 0%, #1a1c22 50%, #0e0f13 100%);
+      z-index: 10000;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    #mobile-lock-screen.visible {
+      display: flex;
+    }
+    .lock-icon {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 24px;
+      opacity: 0.9;
+    }
+    .lock-icon svg {
+      width: 100%;
+      height: 100%;
+    }
+    .lock-title {
+      font-size: 24px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 12px;
+      letter-spacing: -0.5px;
+    }
+    .lock-subtitle {
+      font-size: 16px;
+      color: #9bd;
+      margin-bottom: 24px;
+    }
+    .lock-description {
+      font-size: 14px;
+      color: #888;
+      line-height: 1.6;
+      max-width: 320px;
+      margin-bottom: 32px;
+    }
+    .lock-features {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 32px;
+      text-align: left;
+    }
+    .lock-feature {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      color: #aaa;
+    }
+    .lock-feature-icon {
+      width: 20px;
+      height: 20px;
+      background: rgba(155, 187, 221, 0.15);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .lock-feature-icon svg {
+      width: 12px;
+      height: 12px;
+      opacity: 0.8;
+    }
+    .lock-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+      max-width: 280px;
+    }
+    .lock-btn {
+      padding: 14px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+      font-family: inherit;
+    }
+    .lock-btn-primary {
+      background: rgba(155, 187, 221, 0.15);
+      color: #9bd;
+      border: 1px solid rgba(155, 187, 221, 0.3);
+    }
+    .lock-btn-primary:hover {
+      background: rgba(155, 187, 221, 0.25);
+    }
+    .lock-btn-secondary {
+      background: transparent;
+      color: #666;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .lock-btn-secondary:hover {
+      color: #888;
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .lock-credit {
+      position: absolute;
+      bottom: 24px;
+      font-size: 12px;
+      color: #555;
+    }
+    .lock-credit a {
+      color: #777;
+      text-decoration: none;
+    }
+    .lock-credit a:hover {
+      color: #9bd;
+    }
     #app-container {
       display: flex;
       width: 100%;
@@ -113,9 +238,85 @@
     }
     a, a:visited { color: #9bd; text-decoration: none; }
     a:hover { text-decoration: underline; }
+    
+    /* Mobile responsiveness for users who continue anyway */
+    @media (max-width: 768px) {
+      #panel-container {
+        display: none; /* Hide tweakpane on mobile - too cramped */
+      }
+      #controlsBar {
+        right: 0;
+        font-size: 10px;
+        padding: 6px 10px;
+        flex-direction: column;
+        gap: 4px;
+      }
+      #controlsBar .controls {
+        display: none; /* Hide keyboard hints on mobile */
+      }
+      #controlsBar .credit {
+        margin-left: 0;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      #controlsBar {
+        font-size: 9px;
+        padding: 4px 8px;
+      }
+    }
   </style>
 </head>
 <body>
+  <!-- Mobile Lock Screen -->
+  <div id="mobile-lock-screen">
+    <div class="lock-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#9bd" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+    </div>
+    <h1 class="lock-title">Desktop Experience</h1>
+    <p class="lock-subtitle">Particle Landscape Explorer</p>
+    <p class="lock-description">
+      This interactive 3D visualization is designed for desktop browsers with keyboard and mouse controls.
+    </p>
+    <div class="lock-features">
+      <div class="lock-feature">
+        <span class="lock-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#9bd" stroke-width="2">
+            <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/>
+          </svg>
+        </span>
+        <span>WASD keys to fly the airplane</span>
+      </div>
+      <div class="lock-feature">
+        <span class="lock-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#9bd" stroke-width="2">
+            <path d="M12 19V5M5 12l7-7 7 7"/>
+          </svg>
+        </span>
+        <span>Mouse scroll to zoom in/out</span>
+      </div>
+      <div class="lock-feature">
+        <span class="lock-feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#9bd" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4M12 8h.01"/>
+          </svg>
+        </span>
+        <span>Right-click drag to orbit camera</span>
+      </div>
+    </div>
+    <div class="lock-buttons">
+      <button class="lock-btn lock-btn-secondary" onclick="dismissMobileLock()">
+        Continue anyway (limited experience)
+      </button>
+    </div>
+    <p class="lock-credit">Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></p>
+  </div>
+
   <div id="app-container">
     <div id="canvas-container">
     </div>
@@ -132,6 +333,65 @@
     <span class="credit">Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></span>
   </div>
   <input id="heightmapFile" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
+
+  <script>
+    // Mobile detection and lock screen
+    function isMobileDevice() {
+      // Check for touch capability and screen size
+      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isSmallScreen = window.innerWidth <= 768 || window.innerHeight <= 600;
+      
+      // Check user agent for mobile indicators
+      const mobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      
+      // Consider it mobile if it's a touch device with small screen, or mobile UA
+      return (hasTouch && isSmallScreen) || (mobileUA && isSmallScreen);
+    }
+    
+    function showMobileLock() {
+      const lockScreen = document.getElementById('mobile-lock-screen');
+      if (lockScreen) {
+        lockScreen.classList.add('visible');
+      }
+    }
+    
+    function dismissMobileLock() {
+      const lockScreen = document.getElementById('mobile-lock-screen');
+      if (lockScreen) {
+        lockScreen.classList.remove('visible');
+      }
+    }
+    
+    // Check on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      if (isMobileDevice()) {
+        showMobileLock();
+      }
+    });
+    
+    // Also check on resize (in case orientation changes)
+    let resizeTimeout;
+    window.addEventListener('resize', function() {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(function() {
+        const lockScreen = document.getElementById('mobile-lock-screen');
+        // Only show if not already dismissed and is mobile
+        if (lockScreen && !lockScreen.dataset.dismissed && isMobileDevice()) {
+          showMobileLock();
+        }
+      }, 250);
+    });
+    
+    // Mark as dismissed when user clicks continue
+    const originalDismiss = window.dismissMobileLock;
+    window.dismissMobileLock = function() {
+      const lockScreen = document.getElementById('mobile-lock-screen');
+      if (lockScreen) {
+        lockScreen.dataset.dismissed = 'true';
+        lockScreen.classList.remove('visible');
+      }
+    };
+  </script>
 
   <script type="importmap">
     {
