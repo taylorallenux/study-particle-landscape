@@ -591,7 +591,7 @@
       speed: 3,      // horizontal movement speed
       vertSpeed: 2,  // vertical movement speed
       maxOffset: 5.5,  // max left/right offset
-      altitudeRange: 1.5, // max up/down range
+      altitudeRange: 4.6, // max up/down range
       smoothing: 8,  // lerp smoothing factor
       height: -2.5,  // height offset from camera
       size: 0.4,     // scale of the airplane
@@ -848,7 +848,7 @@
       airplaneState.tilt += (targetTilt - airplaneState.tilt) * Math.min(1, 6 * delta);
       
       // Calculate pitch based on vertical movement
-      const targetPitch = -dy * 0.8; // nose up when climbing, down when diving
+      const targetPitch = dy * 0.8; // nose up when climbing, down when diving
       airplaneState.pitch += (targetPitch - airplaneState.pitch) * Math.min(1, 6 * delta);
       
       // Get forward direction for movement and orientation
@@ -1084,7 +1084,7 @@
 
     // Tiling with Points
     let tilesPoints = [];
-    const state = { tileSize: 12, tilesX: 7, tilesZ: 10, scrollSpeed: 0.6 };
+    const state = { tileSize: 12, tilesX: 7, tilesZ: 10, scrollSpeed: 3.0 };
     const scrollOffset = new THREE.Vector2(0, 0);
 
     function buildBaseGeometry() {
@@ -1174,7 +1174,7 @@
       maskRadius: 0.1,
       maskFeather: 0.0,
       // Animation
-      scrollSpeed: 0.6,
+      scrollSpeed: 3.0,
       animateScroll: true,
       // Camera
       camYaw: 0,
@@ -1200,7 +1200,7 @@
       airplaneSpeed: 3,
       airplaneMaxOffset: 5.5,
       airplaneVertSpeed: 2,
-      airplaneAltitudeRange: 1.5,
+      airplaneAltitudeRange: 4.6,
       airplaneHeight: -2.5,
       airplaneSize: 0.4,
       airplaneDistance: 3.5,
@@ -1610,10 +1610,11 @@
     let heightmapCtx = null;
     let heightmapWidth = 0;
     let heightmapHeight = 0;
+    let heightmapData = null; // Cached pixel data for fast sampling
 
-    // Sample terrain height at a world XZ position
+    // Sample terrain height at a world XZ position using bilinear interpolation
     function sampleTerrainHeight(worldX, worldZ) {
-      if (!heightmapCtx || !heightmapWidth || !heightmapHeight) {
+      if (!heightmapData || !heightmapWidth || !heightmapHeight) {
         return null; // No heightmap loaded yet
       }
       
@@ -1625,28 +1626,52 @@
       const relZ = worldZ + scrollOffset.y;
       
       // Convert to UV coordinates within [0,1] - the texture repeats per tile
-      // Add 0.5 to center the sampling (geometry goes from -tileSize/2 to +tileSize/2)
-      let u = (((relX / tileSize) + 0.5) % 1 + 1) % 1;
-      let v = (((relZ / tileSize) + 0.5) % 1 + 1) % 1;
-      // Flip V because PlaneGeometry rotation may invert it
-      v = 1.0 - v;
+      // The UV offset depends on whether tilesX/tilesZ are odd or even:
+      // - Odd tile count: tile center at origin, so +0.5 offset needed
+      // - Even tile count: tile edge at origin, so no offset needed
+      const uOffset = (state.tilesX % 2) * 0.5;
+      const vOffset = (state.tilesZ % 2) * 0.5;
       
-      // Convert UV to pixel coordinates
-      const px = Math.floor(u * heightmapWidth);
-      const py = Math.floor(v * heightmapHeight);
+      let u = (((relX / tileSize) + uOffset) % 1 + 1) % 1;
+      let v = (((relZ / tileSize) + vOffset) % 1 + 1) % 1;
       
-      // Clamp to valid range
-      const clampedPx = Math.max(0, Math.min(heightmapWidth - 1, px));
-      const clampedPy = Math.max(0, Math.min(heightmapHeight - 1, py));
+      // Convert UV to floating-point pixel coordinates for bilinear interpolation
+      const fx = u * heightmapWidth - 0.5;
+      const fy = v * heightmapHeight - 0.5;
       
-      // Sample the pixel
-      const pixelData = heightmapCtx.getImageData(clampedPx, clampedPy, 1, 1).data;
+      // Get the four surrounding pixels with wrapping
+      const x0 = Math.floor(fx);
+      const y0 = Math.floor(fy);
+      const x1 = x0 + 1;
+      const y1 = y0 + 1;
       
-      // Calculate height using same formula as shader: (r+g+b)/3 * scale + bias
-      const r = pixelData[0] / 255;
-      const g = pixelData[1] / 255;
-      const b = pixelData[2] / 255;
-      const h = (r + g + b) / 3;
+      // Wrap coordinates for seamless tiling
+      const wx0 = ((x0 % heightmapWidth) + heightmapWidth) % heightmapWidth;
+      const wy0 = ((y0 % heightmapHeight) + heightmapHeight) % heightmapHeight;
+      const wx1 = ((x1 % heightmapWidth) + heightmapWidth) % heightmapWidth;
+      const wy1 = ((y1 % heightmapHeight) + heightmapHeight) % heightmapHeight;
+      
+      // Bilinear interpolation weights
+      const tx = fx - x0;
+      const ty = fy - y0;
+      
+      // Fast sample from cached heightmap data (RGBA, 4 bytes per pixel)
+      const samplePixelHeight = (px, py) => {
+        const idx = (py * heightmapWidth + px) * 4;
+        return (heightmapData[idx] + heightmapData[idx + 1] + heightmapData[idx + 2]) / (255 * 3);
+      };
+      
+      // Sample the four corners
+      const h00 = samplePixelHeight(wx0, wy0);
+      const h10 = samplePixelHeight(wx1, wy0);
+      const h01 = samplePixelHeight(wx0, wy1);
+      const h11 = samplePixelHeight(wx1, wy1);
+      
+      // Bilinear interpolation
+      const h = h00 * (1 - tx) * (1 - ty) +
+                h10 * tx * (1 - ty) +
+                h01 * (1 - tx) * ty +
+                h11 * tx * ty;
       
       const scale = pointMaterial.uniforms.uScale.value;
       const bias = pointMaterial.uniforms.uBias.value;
@@ -1683,7 +1708,7 @@
       pointMaterial.needsUpdate = true;
       rebuildTiling();
       
-      // Create canvas for CPU-side heightmap sampling
+      // Create canvas for CPU-side heightmap sampling and cache pixel data
       const texImg = texture.image;
       if (texImg) {
         heightmapWidth = texImg.width || texImg.naturalWidth || 512;
@@ -1693,6 +1718,8 @@
         heightmapCanvas.height = heightmapHeight;
         heightmapCtx = heightmapCanvas.getContext('2d', { willReadFrequently: true });
         heightmapCtx.drawImage(texImg, 0, 0, heightmapWidth, heightmapHeight);
+        // Cache the entire heightmap for fast sampling
+        heightmapData = heightmapCtx.getImageData(0, 0, heightmapWidth, heightmapHeight).data;
       }
     }
 
