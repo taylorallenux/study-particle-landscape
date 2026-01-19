@@ -624,9 +624,9 @@
         uRadarRingColorHigh: { value: new THREE.Color(0xffee33) },  // Ring color for peaks
         uRainColorFadeDuration: { value: 1.0 },                      // Time to crossfade from rain to ring color
         // Rain particle shape
-        uRainParticleWidth: { value: 0.08 },
-        uRainParticleHeight: { value: 0.45 },
-        uRainParticleScale: { value: 25.0 },
+        uRainParticleWidth: { value: 0.01 },
+        uRainParticleLength: { value: 7.0 },
+        uRainImpactScale: { value: 4.5 },
         uAirplaneColorFar: { value: new THREE.Color(0xff9000) },  // orange when high/safe
         uAirplaneColorClose: { value: new THREE.Color(0xff0000) }, // pure red when low/danger
         // Fog uniforms expected by renderer when material.fog === true
@@ -649,6 +649,8 @@
         varying float vRadarHeight;
         varying float vRadarRainOpacity;
         varying float vRainColorBlend;
+        varying float vRainProgress;
+        varying vec2 vRainDirection;
         #include <fog_pars_vertex>
         uniform sampler2D uMap;
         uniform float uScale;
@@ -679,7 +681,8 @@
         uniform float uRadarExpandSpeed;
         uniform float uRadarRingFeather;
         uniform float uRainColorFadeDuration;
-        uniform float uRainParticleScale;
+        uniform float uRainParticleLength;
+        uniform float uRainImpactScale;
         // hash-based 2D noise -> scalar in [-1,1]
         float hash(vec2 p){
           return -1.0 + 2.0 * fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -738,6 +741,22 @@
           // Default opacity and color blend (fully visible, final color when not in radar animation)
           vRadarRainOpacity = 1.0;
           vRainColorBlend = 1.0;
+          vRainProgress = 1.0;
+          vRainDirection = vec2(0.0, 1.0); // default: vertical on screen
+          
+          // Calculate screen-space "down" direction for rain dash orientation
+          // Project world-space down vector to screen space
+          vec4 worldPos4 = modelMatrix * vec4(p, 1.0);
+          vec4 worldDown = worldPos4 + vec4(0.0, -1.0, 0.0, 0.0);
+          vec4 clipPos = projectionMatrix * viewMatrix * worldPos4;
+          vec4 clipDown = projectionMatrix * viewMatrix * worldDown;
+          vec2 screenPos = clipPos.xy / clipPos.w;
+          vec2 screenDown = clipDown.xy / clipDown.w;
+          vec2 rainDir = normalize(screenDown - screenPos);
+          // Only use this direction if it's valid (not degenerate)
+          if (length(screenDown - screenPos) > 0.001) {
+            vRainDirection = rainDir;
+          }
           
           // Rain animation: only apply to particles OUTSIDE the mask (additive reveal)
           // Particles inside mask stay in place, particles outside get rain effect
@@ -748,12 +767,20 @@
             float randDelay = hash(vUv * 7.89) * 0.15;
             float delayedTime = timeSinceArrival - randDelay;
             float delayedProgress = clamp(delayedTime / max(0.01, uRadarRainDuration), 0.0, 1.0);
-            // Easing: fast start, smooth landing (ease-out cubic)
-            float delayedEased = 1.0 - pow(1.0 - delayedProgress, 3.0);
+            // Easing: steady fall speed, then dramatic slowdown just before impact
+            // Blend between linear (steady) and ease-out (slowing) based on progress
+            float linear = delayedProgress;
+            float easeOut = 1.0 - pow(1.0 - delayedProgress, 4.0);
+            // Quadratic blend: more linear early, more ease-out near the end
+            float blend = delayedProgress * delayedProgress;
+            float delayedEased = mix(linear, easeOut, blend);
             float rainOffset = uRadarRainHeight * (1.0 - delayedEased);
             
             // Opacity ramps from 0 to 1 as particles fall into place
             vRadarRainOpacity = delayedEased;
+            
+            // Pass LINEAR progress (not eased) for shape transition - this keeps dashes visible longer
+            vRainProgress = delayedProgress;
             
             // Color crossfade: starts after landing, transitions over uRainColorFadeDuration
             // Time since particle landed (delayedEased reached 1.0)
@@ -770,10 +797,14 @@
             animatedP.y = baseY + rainOffset;
             mvPosition = modelViewMatrix * vec4(animatedP, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            // Scale up point size while falling (for visible rain dashes), shrink to normal when landed
-            // Use same curve as shape blend - stay large while falling, shrink at the end
-            float sizeBlend = smoothstep(0.7, 1.0, delayedEased);
-            float fallScale = mix(uRainParticleScale, 1.0, sizeBlend);
+            // Two-phase size transition:
+            // Phase 1 (0.7-0.9): shrink from rainScale to impactScale (visible impact)
+            // Phase 2 (0.9-1.0): shrink from impactScale to 1.0 (settle to final size)
+            float rainScale = uRainParticleLength * 4.0;
+            float phase1 = smoothstep(0.7, 0.9, delayedProgress);
+            float phase2 = smoothstep(0.9, 1.0, delayedProgress);
+            float fallScale = mix(rainScale, uRainImpactScale, phase1);
+            fallScale = mix(fallScale, 1.0, phase2);
             gl_PointSize = max(1.0, uPointSize * fallScale * (300.0 / max(1.0, -mvPosition.z)));
           }
           
@@ -801,7 +832,7 @@
         uniform vec3 uRadarRingColorMid;
         uniform vec3 uRadarRingColorHigh;
         uniform float uRainParticleWidth;
-        uniform float uRainParticleHeight;
+        uniform float uRainParticleLength;
         varying float vMaskAlpha;
         varying float vHoverMix;
         varying float vAirplaneMix;
@@ -810,32 +841,48 @@
         varying float vRadarHeight;
         varying float vRadarRainOpacity;
         varying float vRainColorBlend;
+        varying float vRainProgress;
+        varying vec2 vRainDirection;
         #include <fog_pars_fragment>
         void main() {
           vec2 pc = gl_PointCoord - 0.5;
           float r = length(pc);
           
-          // Disc shape (normal point)
+          // Rotate point coordinates to align dash with world-space "down" direction
+          // This makes rain always appear to fall downward regardless of camera angle
+          vec2 rainDir = normalize(vRainDirection);
+          // Rotation matrix to align Y-axis with rain direction
+          // rainDir points "down" in screen space, so we rotate pc to match
+          vec2 rotatedPc;
+          rotatedPc.x = pc.x * (-rainDir.y) + pc.y * (-rainDir.x);
+          rotatedPc.y = pc.x * (-rainDir.x) + pc.y * (rainDir.y);
+          
+          // Disc shape (normal point) - uses unrotated coordinates
           float disc = 1.0 - smoothstep(0.45, 0.5, r);
           
-          // Vertical line shape (rain streak) - elongated dash
-          // Narrow in X (width), tall in Y (height)
-          float xMask = 1.0 - smoothstep(uRainParticleWidth, uRainParticleWidth + 0.04, abs(pc.x));
-          float yMask = 1.0 - smoothstep(uRainParticleHeight, uRainParticleHeight + 0.05, abs(pc.y));
+          // Vertical line shape (rain streak) - uses rotated coordinates
+          // Thickness is fully independent of length by compensating for point size scaling
+          // Both the width and the edge softness are scaled inversely with length
+          float lengthScale = max(1.0, uRainParticleLength);
+          float compensation = 7.0 / lengthScale; // 7.0 is reference length
+          float compensatedWidth = uRainParticleWidth * compensation;
+          float edgeSoftness = 0.02 * compensation;
+          float xMask = 1.0 - smoothstep(compensatedWidth, compensatedWidth + edgeSoftness, abs(rotatedPc.x));
+          float yMask = 1.0 - smoothstep(0.48, 0.5, abs(rotatedPc.y));
           float lineMask = xMask * yMask;
           
-          // Shape transition: stay as line longer, then quickly morph to disc at the end
-          // Use a curve that keeps it as a line for most of the fall
-          float shapeBlend = smoothstep(0.7, 1.0, vRadarRainOpacity);
+          // Shape transition: starts during impact phase (0.88) for visible impact effect
+          // The impact size parameter controls how large the circle is at transition
+          float shapeBlend = smoothstep(0.88, 0.98, vRainProgress);
           float shape = mix(lineMask, disc, shapeBlend);
           
           // Radar can reveal particles beyond the mask
           float radarAlpha = vRadarMix * uRadarFade;
           float effectiveAlpha = max(vMaskAlpha, radarAlpha);
           
-          // Rain opacity: start more visible (0.5) and ramp to full
+          // Rain opacity: start more visible (0.6) and ramp to full
           // This ensures lines are visible during the fall
-          float rainAlpha = mix(0.5, 1.0, vRadarRainOpacity);
+          float rainAlpha = mix(0.6, 1.0, vRadarRainOpacity);
           float alpha = shape * effectiveAlpha * rainAlpha;
           if (alpha <= 0.001) discard;
           
@@ -921,7 +968,7 @@
       maxRadius: 35.0,        // max expansion radius
       expandSpeed: 9.72,      // units per second (maxRadius / expandDuration)
       rainHeight: 41.0,       // how high particles start above their final position
-      rainDuration: 0.35,     // how long the fall animation takes
+      rainDuration: 0.5,      // how long the fall animation takes
       showRing: false,        // whether to show the colored pulse ring
       ringFeather: 0.1,       // softness of the ring edges
       rainColor: '#bff4ff',   // color of falling particles
@@ -935,9 +982,9 @@
       visualRingWidth: 0.07,
       visualRingOpacity: 1.0,
       // Rain particle shape
-      rainParticleWidth: 0.08,
-      rainParticleHeight: 0.45,
-      rainParticleScale: 25.0
+      rainParticleWidth: 0.01,
+      rainParticleLength: 7.0,
+      rainImpactScale: 4.5
     };
     
     // Visual expanding ring mesh
@@ -1340,8 +1387,8 @@
       pointMaterial.uniforms.uRadarRingColorHigh.value.set(radarState.ringColorHigh);
       pointMaterial.uniforms.uRainColorFadeDuration.value = radarState.colorFadeDuration;
       pointMaterial.uniforms.uRainParticleWidth.value = radarState.rainParticleWidth;
-      pointMaterial.uniforms.uRainParticleHeight.value = radarState.rainParticleHeight;
-      pointMaterial.uniforms.uRainParticleScale.value = radarState.rainParticleScale;
+      pointMaterial.uniforms.uRainParticleLength.value = radarState.rainParticleLength;
+      pointMaterial.uniforms.uRainImpactScale.value = radarState.rainImpactScale;
       
       // Position visual ring at origin, at airplane altitude
       if (visualRing) {
@@ -1568,7 +1615,7 @@
 
     // Particles folder
     const particlesFolder = pane.addFolder({ title: 'Particles', expanded: true });
-    particlesFolder.addBinding(params, 'pointSize', { min: 0, max: 0.5, step: 0.01, label: 'Point Size' }).on('change', (ev) => {
+    particlesFolder.addBinding(params, 'pointSize', { min: 0, max: 0.11, step: 0.01, label: 'Point Size' }).on('change', (ev) => {
       pointMaterial.uniforms.uPointSize.value = ev.value;
     });
     particlesFolder.addBinding(params, 'jitter', { min: 0.0, max: 0.2, step: 0.001 }).on('change', (ev) => {
@@ -1698,9 +1745,9 @@
     radarFolder.addBinding(radarState, 'ringColorMid', { view: 'color', label: 'Ring Mid' });
     radarFolder.addBinding(radarState, 'ringColorHigh', { view: 'color', label: 'Ring High' });
     radarFolder.addBlade({ view: 'separator' });
-    radarFolder.addBinding(radarState, 'rainParticleWidth', { min: 0.02, max: 0.3, step: 0.01, label: 'Rain Width' });
-    radarFolder.addBinding(radarState, 'rainParticleHeight', { min: 0.1, max: 0.5, step: 0.01, label: 'Rain Height' });
-    radarFolder.addBinding(radarState, 'rainParticleScale', { min: 5, max: 50, step: 1, label: 'Rain Size' });
+    radarFolder.addBinding(radarState, 'rainParticleWidth', { min: 0.01, max: 0.4, step: 0.01, label: 'Dash Thickness' });
+    radarFolder.addBinding(radarState, 'rainParticleLength', { min: 1, max: 20, step: 0.5, label: 'Dash Length' });
+    radarFolder.addBinding(radarState, 'rainImpactScale', { min: 1, max: 10, step: 0.5, label: 'Impact Size' });
     radarFolder.addBlade({ view: 'separator' });
     radarFolder.addBinding(radarState, 'visualRingEnabled', { label: 'Visual Ring' });
     radarFolder.addBinding(radarState, 'visualRingColor', { view: 'color', label: 'V-Ring Color' });
@@ -2164,8 +2211,8 @@
         
         // Update rain particle shape uniforms in real-time
         pointMaterial.uniforms.uRainParticleWidth.value = radarState.rainParticleWidth;
-        pointMaterial.uniforms.uRainParticleHeight.value = radarState.rainParticleHeight;
-        pointMaterial.uniforms.uRainParticleScale.value = radarState.rainParticleScale;
+        pointMaterial.uniforms.uRainParticleLength.value = radarState.rainParticleLength;
+        pointMaterial.uniforms.uRainImpactScale.value = radarState.rainImpactScale;
       }
       
       // Camera mode logic with orbit support
