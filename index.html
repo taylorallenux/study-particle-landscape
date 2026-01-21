@@ -273,6 +273,98 @@
     #controlsBar .mobile-hint {
       display: none;
     }
+    
+    /* Altitude Indicator (brutalist avionics style) */
+    #altitude-indicator {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 50px;
+      height: 100px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #altitude-indicator .alt-track {
+      width: 2px;
+      height: 100%;
+      background: rgba(255, 144, 0, 0.3);
+    }
+    #altitude-indicator .alt-marker {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-16px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: bottom 0.1s ease-out;
+    }
+    #altitude-indicator .alt-tick {
+      width: 12px;
+      height: 2px;
+      background: #ff9000;
+      box-shadow: 0 0 6px rgba(255, 144, 0, 0.8);
+    }
+    #altitude-indicator .alt-value {
+      font-size: 10px;
+      color: #ff9000;
+      font-weight: 600;
+      text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+      min-width: 24px;
+    }
+    
+    /* Throttle/Speed Indicator (brutalist avionics style) */
+    #speed-indicator {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 50px;
+      height: 100px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #speed-indicator .speed-track {
+      width: 2px;
+      height: 100%;
+      background: rgba(255, 144, 0, 0.3);
+    }
+    #speed-indicator .speed-marker {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: bottom 0.1s ease-out;
+    }
+    #speed-indicator .speed-tick {
+      width: 12px;
+      height: 2px;
+      background: #ff9000;
+      box-shadow: 0 0 6px rgba(255, 144, 0, 0.8);
+    }
+    #speed-indicator .speed-value {
+      font-size: 10px;
+      color: #ff9000;
+      font-weight: 600;
+      text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+      min-width: 24px;
+    }
+    
+    @media (max-width: 768px) {
+      #speed-indicator {
+        left: 10px;
+      }
+      #altitude-indicator {
+        left: auto;
+        right: 10px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -297,7 +389,7 @@
             <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/>
           </svg>
         </span>
-        <span>WASD keys to fly the airplane</span>
+        <span>WS = Throttle, Mouse = Steer</span>
       </div>
       <div class="lock-feature">
         <span class="lock-feature-icon">
@@ -334,12 +426,31 @@
     <div class="controls">
       <span class="control-item"><kbd>Space</kbd> Ping Sonar</span>
       <span class="control-item"><kbd>G</kbd> Change Camera</span>
-      <span class="control-item"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Fly</span>
+      <span class="control-item"><kbd>W</kbd><kbd>S</kbd> Throttle</span>
+      <span class="control-item"><kbd>A</kbd><kbd>D</kbd> Strafe</span>
+      <span class="control-item"><kbd>Mouse</kbd> Steer</span>
       <span class="control-item"><kbd>Scroll</kbd> Zoom</span>
-      <span class="control-item"><kbd>Right-Click Drag</kbd> Orbit</span>
     </div>
     <span class="mobile-hint">Tap anywhere to ping sonar</span>
     <span class="credit">Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></span>
+  </div>
+  
+  <!-- Speed/Throttle Indicator -->
+  <div id="speed-indicator">
+    <div class="speed-track"></div>
+    <div class="speed-marker" style="bottom: 30%">
+      <span class="speed-value">3.0</span>
+      <div class="speed-tick"></div>
+    </div>
+  </div>
+  
+  <!-- Altitude Indicator -->
+  <div id="altitude-indicator">
+    <div class="alt-track"></div>
+    <div class="alt-marker" style="bottom: 50%">
+      <div class="alt-tick"></div>
+      <span class="alt-value">1.5</span>
+    </div>
   </div>
   <input id="heightmapFile" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
 
@@ -435,14 +546,22 @@
     canvasContainer.appendChild(renderer.domElement);
     renderer.domElement.classList.add('drop-target');
 
-    // Mouse tracking for hover effects
+    // Mouse tracking for hover effects and airplane direction control
     canvasContainer.addEventListener('mousemove', (e) => {
       const rect = canvasContainer.getBoundingClientRect();
       window.__mouseNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       window.__mouseNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      
+      // Update airplane direction based on mouse position
+      // X position controls turn rate (-1 to 1, continuous turning)
+      // Y position controls climb rate (-1 to 1, continuous altitude change)
+      mouseControl.active = true;
+      mouseControl.turnRate = window.__mouseNdc.x;   // -1 (left) to 1 (right)
+      mouseControl.climbRate = window.__mouseNdc.y;  // -1 (down) to 1 (up)
     });
     canvasContainer.addEventListener('mouseleave', () => {
       window.__mouseNdc.set(-2, -2);
+      mouseControl.active = false;
     });
 
     // Mouse scroll for camera distance control
@@ -578,7 +697,7 @@
     scene.add(grid);
 
     // Plane setup
-    const initialSize = 12; // default tile size
+    const initialSize = 44; // default tile size
     let segments = 256; // will be controlled by UI (subdivisions)
 
     let plane = null; // unused after tiling in pointcloud mode
@@ -617,6 +736,7 @@
         uRadarExpandSpeed: { value: 9.72 },    // Units per second for ring expansion
         uRadarShowRing: { value: 0.0 },        // Whether to show the colored ring effect
         uRadarRingFeather: { value: 0.1 },     // Softness of the ring edges
+        uPersistentRevealRadius: { value: 0.0 }, // Tracks max revealed area (doesn't reset on new pulse)
         // Rain and ring colors
         uRainColor: { value: new THREE.Color(0xbff4ff) },           // Color of falling particles
         uRadarRingColorLow: { value: new THREE.Color(0x00ccff) },   // Ring color for valleys
@@ -627,6 +747,7 @@
         uRainParticleWidth: { value: 0.01 },
         uRainParticleLength: { value: 7.0 },
         uRainImpactScale: { value: 4.5 },
+        uRainSpawnRadius: { value: 0.5 },  // How close to center particles originate (0 = exact center)
         uAirplaneColorFar: { value: new THREE.Color(0xff9000) },  // orange when high/safe
         uAirplaneColorClose: { value: new THREE.Color(0xff0000) }, // pure red when low/danger
         // Fog uniforms expected by renderer when material.fog === true
@@ -680,9 +801,11 @@
         uniform float uRadarTime;
         uniform float uRadarExpandSpeed;
         uniform float uRadarRingFeather;
+        uniform float uPersistentRevealRadius;
         uniform float uRainColorFadeDuration;
         uniform float uRainParticleLength;
         uniform float uRainImpactScale;
+        uniform float uRainSpawnRadius;
         // hash-based 2D noise -> scalar in [-1,1]
         float hash(vec2 p){
           return -1.0 + 2.0 * fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -758,11 +881,9 @@
             vRainDirection = rainDir;
           }
           
-          // Rain animation: only apply to particles OUTSIDE the mask (additive reveal)
-          // Particles inside mask stay in place, particles outside get rain effect
-          bool isOutsideMask = vMaskAlpha < 0.5;
-          
-          if (uRadarActive > 0.5 && timeSinceArrival > -0.1 && isOutsideMask) {
+          // Rain animation: apply to ALL particles reached by the radar pulse
+          // Particles originate from near aircraft center and spread to final positions
+          if (uRadarActive > 0.5 && timeSinceArrival > -0.1) {
             // Add slight randomized delay based on position for organic feel
             float randDelay = hash(vUv * 7.89) * 0.15;
             float delayedTime = timeSinceArrival - randDelay;
@@ -775,6 +896,17 @@
             float blend = delayedProgress * delayedProgress;
             float delayedEased = mix(linear, easeOut, blend);
             float rainOffset = uRadarRainHeight * (1.0 - delayedEased);
+            
+            // Horizontal convergence: particles start near center and spread to final positions
+            // Calculate direction from radar origin to particle's final position
+            vec2 toParticle = worldPos.xz - uRadarOrigin.xz;
+            float distFromOrigin = length(toParticle);
+            vec2 dirFromOrigin = distFromOrigin > 0.01 ? toParticle / distFromOrigin : vec2(0.0);
+            // At start (delayedEased=0), particles are at spawn radius from center
+            // At end (delayedEased=1), particles are at their final position
+            float startDist = uRainSpawnRadius;
+            float horizontalOffset = mix(startDist, distFromOrigin, delayedEased) - distFromOrigin;
+            vec2 horizontalShift = dirFromOrigin * horizontalOffset;
             
             // Opacity ramps from 0 to 1 as particles fall into place
             vRadarRainOpacity = delayedEased;
@@ -790,11 +922,15 @@
             // 0 = rain color, 1 = ring/final color
             vRainColorBlend = colorFadeProgress;
             
-            // Update world position Y for the rain effect
+            // Update world position for the rain effect (vertical + horizontal)
             worldPos.y += rainOffset;
+            worldPos.x += horizontalShift.x;
+            worldPos.z += horizontalShift.y;
             // Also update the gl_Position and point size
             vec3 animatedP = p;
             animatedP.y = baseY + rainOffset;
+            animatedP.x += horizontalShift.x;
+            animatedP.z += horizontalShift.y;
             mvPosition = modelViewMatrix * vec4(animatedP, 1.0);
             gl_Position = projectionMatrix * mvPosition;
             // Two-phase size transition:
@@ -812,8 +948,10 @@
           float feather = max(0.1, uRadarRingFeather);
           float ringMix = smoothstep(innerEdge - feather, innerEdge, radarDist) 
                         * (1.0 - smoothstep(outerEdge, outerEdge + feather, radarDist));
-          // Also show particles that the ring has passed over (persistent reveal)
-          float revealMix = 1.0 - smoothstep(outerEdge - feather * 0.5, outerEdge + feather, radarDist);
+          // Persistent reveal uses the max of current radius and persistent radius
+          // This ensures particles stay lit even when a new pulse starts
+          float persistentEdge = max(outerEdge, uPersistentRevealRadius);
+          float revealMix = 1.0 - smoothstep(persistentEdge - feather * 0.5, persistentEdge + feather, radarDist);
           vRadarMix = uRadarActive * max(ringMix * 1.5, revealMix * 0.8);
           // Height for coloring (normalized 0-1 based on final world Y, not animated)
           vRadarHeight = clamp((baseY + 1.0) / 3.0, 0.0, 1.0);
@@ -952,23 +1090,43 @@
       isColliding: false,
       collisionShake: 0,
       collisionThreshold: -0.1, // negative = only trigger when actually below terrain
+      // Free roam heading/turning
+      heading: 0,           // current yaw angle (radians) - 0 = facing -Z
+      targetHeading: 0,     // smoothed heading target
+      turnSpeed: 1.5,       // radians per second turn rate
+      // Strafe
+      strafeOffset: 0,      // current strafe offset (perpendicular to heading)
+      targetStrafeOffset: 0, // target strafe for easing
+      strafeSpeed: 1.0,     // strafe speed in units per second (slow)
+      strafeEasing: 2.0,    // easing factor (lower = heavier ease-in)
+      maxStrafe: 8.0,       // maximum strafe distance from center
     };
     
     // Store airplane materials for color change on collision
     let airplaneMaterials = [];
-    const keysPressed = { left: false, right: false, up: false, down: false };
+    const keysPressed = { throttleUp: false, throttleDown: false, strafeLeft: false, strafeRight: false };
+    
+    // Mouse control state for airplane direction
+    const mouseControl = {
+      turnRate: 0,           // continuous turn rate from mouse X (-1 to 1)
+      climbRate: 0,          // continuous climb rate from mouse Y (-1 to 1)
+      active: false          // whether mouse is over canvas
+    };
     
     // Radar pulse state
     const radarState = {
       active: false,
       startTime: 0,
+      fadeEndTime: 0,         // absolute time when effect should fully fade (can be extended)
       expandDuration: 3.6,    // seconds to expand to full radius
       persistDuration: 2.0,   // seconds to persist after expansion
       fadeDuration: 0.5,      // seconds to fade out
       maxRadius: 35.0,        // max expansion radius
       expandSpeed: 9.72,      // units per second (maxRadius / expandDuration)
+      currentRadius: 0,       // current animated radius (doesn't reset on re-pulse)
       rainHeight: 41.0,       // how high particles start above their final position
       rainDuration: 0.5,      // how long the fall animation takes
+      rainSpawnRadius: 0.5,   // how close to aircraft center particles originate
       showRing: false,        // whether to show the colored pulse ring
       ringFeather: 0.1,       // softness of the ring edges
       rainColor: '#bff4ff',   // color of falling particles
@@ -984,19 +1142,20 @@
       // Rain particle shape
       rainParticleWidth: 0.01,
       rainParticleLength: 7.0,
-      rainImpactScale: 4.5
+      rainImpactScale: 4.5,
+      // Persistent reveal tracking
+      persistentRevealRadius: 0.0
     };
     
-    // Visual expanding ring mesh
-    let visualRing = null;
-    let visualRingMaterial = null;
+    // Multiple visual expanding rings - each pulse creates a new ring
+    const visualRings = [];
+    const MAX_VISUAL_RINGS = 10; // Pool size
     
-    function createVisualRing() {
-      // Create ring geometry - we'll update inner/outer radius during animation
+    function createVisualRingMesh() {
       const geometry = new THREE.RingGeometry(0.1, 0.2, 128);
       geometry.rotateX(-Math.PI / 2); // Lay flat on XZ plane
       
-      visualRingMaterial = new THREE.ShaderMaterial({
+      const material = new THREE.ShaderMaterial({
         uniforms: {
           uColor: { value: new THREE.Color(radarState.visualRingColor) },
           uOpacity: { value: radarState.visualRingOpacity },
@@ -1022,18 +1181,12 @@
           varying vec2 vUv;
           varying vec3 vLocalPos;
           void main() {
-            // Distance from center in local space (ring geometry is centered at local origin)
             float dist = length(vLocalPos.xz);
-            
-            // Soft edges
             float innerAlpha = smoothstep(uInnerRadius - uFeather, uInnerRadius + uFeather, dist);
             float outerAlpha = 1.0 - smoothstep(uOuterRadius - uFeather, uOuterRadius + uFeather, dist);
             float alpha = innerAlpha * outerAlpha * uOpacity;
-            
-            // Glow effect - brighter at edges
             float edgeDist = min(dist - uInnerRadius, uOuterRadius - dist);
             float edgeGlow = 1.0 + 0.5 * (1.0 - smoothstep(0.0, uFeather * 2.0, edgeDist));
-            
             gl_FragColor = vec4(uColor * edgeGlow, alpha);
           }
         `,
@@ -1043,39 +1196,97 @@
         blending: THREE.AdditiveBlending
       });
       
-      visualRing = new THREE.Mesh(geometry, visualRingMaterial);
-      visualRing.visible = false;
-      visualRing.renderOrder = 999; // Render on top
-      scene.add(visualRing);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.visible = false;
+      mesh.renderOrder = 999;
+      scene.add(mesh);
+      return mesh;
     }
     
-    function updateVisualRing(currentRadius, fade) {
-      if (!visualRing || !radarState.visualRingEnabled) {
-        if (visualRing) visualRing.visible = false;
-        return;
+    // Active ring instances with their own animation state
+    const activeRings = [];
+    
+    function spawnVisualRing(origin) {
+      if (!radarState.visualRingEnabled) return;
+      
+      // Get or create a ring mesh
+      let ring;
+      if (visualRings.length < MAX_VISUAL_RINGS) {
+        ring = createVisualRingMesh();
+        visualRings.push(ring);
+      } else {
+        // Find an inactive ring to reuse
+        ring = visualRings.find(r => !r.visible);
+        if (!ring) {
+          // All rings in use, reuse the oldest active one
+          const oldest = activeRings.shift();
+          if (oldest) {
+            oldest.mesh.visible = false;
+            ring = oldest.mesh;
+          } else {
+            return; // No available rings
+          }
+        }
       }
       
-      const width = radarState.visualRingWidth;
-      const innerRadius = Math.max(0.01, currentRadius - width);
-      const outerRadius = currentRadius + width;
+      ring.position.set(origin.x, origin.y, origin.z);
+      ring.visible = true;
       
-      // Recreate geometry with new radii
-      visualRing.geometry.dispose();
-      visualRing.geometry = new THREE.RingGeometry(innerRadius, outerRadius, 128);
-      visualRing.geometry.rotateX(-Math.PI / 2);
-      
-      // Update material uniforms
-      visualRingMaterial.uniforms.uInnerRadius.value = innerRadius;
-      visualRingMaterial.uniforms.uOuterRadius.value = outerRadius;
-      visualRingMaterial.uniforms.uOpacity.value = radarState.visualRingOpacity * fade;
-      visualRingMaterial.uniforms.uColor.value.set(radarState.visualRingColor);
-      visualRingMaterial.uniforms.uFeather.value = width * 0.3;
-      
-      visualRing.visible = true;
+      activeRings.push({
+        mesh: ring,
+        startTime: performance.now() * 0.001,
+        origin: origin.clone()
+      });
     }
     
-    // Initialize visual ring
-    createVisualRing();
+    function updateVisualRings() {
+      const now = performance.now() * 0.001;
+      const totalDuration = radarState.expandDuration + radarState.persistDuration + radarState.fadeDuration;
+      
+      for (let i = activeRings.length - 1; i >= 0; i--) {
+        const ringData = activeRings[i];
+        const elapsed = now - ringData.startTime;
+        
+        if (elapsed >= totalDuration) {
+          // Ring is done, hide it
+          ringData.mesh.visible = false;
+          activeRings.splice(i, 1);
+          continue;
+        }
+        
+        // Calculate radius and fade for this ring
+        let currentRadius, currentFade;
+        
+        if (elapsed < radarState.expandDuration) {
+          const progress = elapsed / radarState.expandDuration;
+          currentRadius = progress * radarState.maxRadius;
+          currentFade = 1.0;
+        } else if (elapsed < radarState.expandDuration + radarState.persistDuration) {
+          currentRadius = radarState.maxRadius;
+          currentFade = 1.0;
+        } else {
+          const fadeProgress = (elapsed - radarState.expandDuration - radarState.persistDuration) / radarState.fadeDuration;
+          currentRadius = radarState.maxRadius;
+          currentFade = 1.0 - fadeProgress;
+        }
+        
+        // Update ring geometry and material
+        const width = radarState.visualRingWidth;
+        const innerRadius = Math.max(0.01, currentRadius - width);
+        const outerRadius = currentRadius + width;
+        
+        ringData.mesh.geometry.dispose();
+        ringData.mesh.geometry = new THREE.RingGeometry(innerRadius, outerRadius, 128);
+        ringData.mesh.geometry.rotateX(-Math.PI / 2);
+        
+        const mat = ringData.mesh.material;
+        mat.uniforms.uInnerRadius.value = innerRadius;
+        mat.uniforms.uOuterRadius.value = outerRadius;
+        mat.uniforms.uOpacity.value = radarState.visualRingOpacity * currentFade;
+        mat.uniforms.uColor.value.set(radarState.visualRingColor);
+        mat.uniforms.uFeather.value = width * 0.3;
+      }
+    }
 
     function createAirplane() {
       // Create a retro wireframe arrow pointing forward
@@ -1168,78 +1379,107 @@
       const isTopdownMode = params.cameraMode === 'topdown';
       const isIsoMode = params.cameraMode === 'isometric';
       
-      // Handle horizontal input - update target position
-      if (keysPressed.left) {
-        airplaneState.targetX = Math.max(-airplaneState.maxOffset, airplaneState.targetX - airplaneState.speed * delta);
+      // Handle throttle input - W/S control speed
+      const throttleSpeed = 3.0; // speed change per second
+      const maxSpeed = 10.0;
+      const minSpeed = 0.0;
+      
+      if (keysPressed.throttleUp) {
+        state.scrollSpeed = Math.min(maxSpeed, state.scrollSpeed + throttleSpeed * delta);
+        params.scrollSpeed = state.scrollSpeed;
       }
-      if (keysPressed.right) {
-        airplaneState.targetX = Math.min(airplaneState.maxOffset, airplaneState.targetX + airplaneState.speed * delta);
+      if (keysPressed.throttleDown) {
+        state.scrollSpeed = Math.max(minSpeed, state.scrollSpeed - throttleSpeed * delta);
+        params.scrollSpeed = state.scrollSpeed;
       }
       
-      // Handle vertical input - update target altitude
-      if (keysPressed.up) {
-        airplaneState.targetY = Math.min(airplaneState.altitudeRange, airplaneState.targetY + airplaneState.vertSpeed * delta);
+      // Handle strafe input - A/D control lateral movement with heavy easing
+      if (keysPressed.strafeLeft) {
+        airplaneState.targetStrafeOffset = Math.max(-airplaneState.maxStrafe, 
+          airplaneState.targetStrafeOffset - airplaneState.strafeSpeed * delta);
       }
-      if (keysPressed.down) {
-        airplaneState.targetY = Math.max(-airplaneState.altitudeRange, airplaneState.targetY - airplaneState.vertSpeed * delta);
+      if (keysPressed.strafeRight) {
+        airplaneState.targetStrafeOffset = Math.min(airplaneState.maxStrafe, 
+          airplaneState.targetStrafeOffset + airplaneState.strafeSpeed * delta);
       }
+      // Ease strafe offset toward target (heavy ease-in)
+      const strafeDiff = airplaneState.targetStrafeOffset - airplaneState.strafeOffset;
+      airplaneState.strafeOffset += strafeDiff * Math.min(1, airplaneState.strafeEasing * delta);
       
-      // Smooth horizontal movement toward target
-      const dx = airplaneState.targetX - airplaneState.x;
-      airplaneState.x += dx * Math.min(1, airplaneState.smoothing * delta);
+      // Mouse controls heading and altitude as continuous rates
+      if (mouseControl.active) {
+        // Turn rate: mouse X position determines how fast we turn
+        // At speed 0, allow slower rotation in place to reposition direction
+        const baseTurnSpeed = 1.5; // radians per second at full deflection
+        const turnSpeed = state.scrollSpeed > 0 ? baseTurnSpeed : baseTurnSpeed * 0.5; // slower rotation when stationary
+        airplaneState.heading += mouseControl.turnRate * turnSpeed * delta;
+        
+        // Climb rate: slower when stationary for precise positioning
+        const baseClimbSpeed = 3.0; // units per second at full deflection
+        const climbSpeed = state.scrollSpeed > 0 ? baseClimbSpeed : baseClimbSpeed * 0.3; // slower when stationary
+        airplaneState.targetY += mouseControl.climbRate * climbSpeed * delta;
+        airplaneState.targetY = Math.max(-airplaneState.altitudeRange, 
+                                Math.min(airplaneState.altitudeRange, airplaneState.targetY));
+      }
       
       // Smooth vertical movement toward target
       const dy = airplaneState.targetY - airplaneState.y;
       airplaneState.y += dy * Math.min(1, airplaneState.smoothing * delta);
       
-      // Calculate tilt based on movement direction (bank into turns like real airplane)
-      const targetTilt = dx * 1.25; // reversed tilt, reduced by 50%
+      // Calculate tilt based on turning (bank into turns like real airplane)
+      // Subtle tilt when rotating in place, full tilt when flying
+      const tiltAmount = state.scrollSpeed > 0 ? 0.5 : 0.15; // less tilt when stationary
+      const targetTilt = mouseControl.turnRate * tiltAmount;
       airplaneState.tilt += (targetTilt - airplaneState.tilt) * Math.min(1, 6 * delta);
       
       // Calculate pitch based on vertical movement
       const targetPitch = dy * 0.8; // nose up when climbing, down when diving
       airplaneState.pitch += (targetPitch - airplaneState.pitch) * Math.min(1, 6 * delta);
       
-      // Get forward direction for movement and orientation
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0;
-      if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
-      forward.normalize();
+      // Get forward direction based on heading (heading 0 = -Z direction)
+      const forward = new THREE.Vector3(
+        Math.sin(airplaneState.heading),
+        0,
+        -Math.cos(airplaneState.heading)
+      );
       
       // Get right vector
       const right = new THREE.Vector3();
       right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
       
       if (isChaseMode || isTopdownMode || isIsoMode) {
-        // All airplane-following modes: airplane strafes left/right, always faces forward
-        // Use fixed forward direction (scroll direction is -Z)
-        const chaseForward = new THREE.Vector3(0, 0, -1);
-        const chaseRight = new THREE.Vector3(1, 0, 0);
+        // Free roam mode: airplane stays at origin, faces heading direction
+        // Terrain scrolls based on heading and speed
+        // Strafe offset is perpendicular to heading
+        const strafeX = Math.cos(airplaneState.heading) * airplaneState.strafeOffset;
+        const strafeZ = Math.sin(airplaneState.heading) * airplaneState.strafeOffset;
         
-        // Strafe position directly using airplaneState.x
-        airplaneState.worldPos.x = airplaneState.x;
+        airplaneState.worldPos.x = strafeX;
         airplaneState.worldPos.y = airplaneState.baseAltitude + airplaneState.y;
-        // Z stays at 0 (airplane stays in place, terrain scrolls past)
+        airplaneState.worldPos.z = strafeZ;
         
         // Set airplane position from world pos
         airplaneGroup.position.copy(airplaneState.worldPos);
-        
-        // Override forward for orientation (always face forward)
-        forward.copy(chaseForward);
-        right.copy(chaseRight);
       } else {
         // Normal mode: airplane positioned relative to camera
+        const camForward = new THREE.Vector3();
+        camera.getWorldDirection(camForward);
+        camForward.y = 0;
+        if (camForward.lengthSq() < 1e-6) camForward.set(0, 0, -1);
+        camForward.normalize();
+        
+        const camRight = new THREE.Vector3();
+        camRight.crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize();
+        
         airplaneGroup.position.copy(camera.position);
-        airplaneGroup.position.addScaledVector(forward, airplaneState.distance);
-        airplaneGroup.position.addScaledVector(right, airplaneState.x);
+        airplaneGroup.position.addScaledVector(camForward, airplaneState.distance);
         airplaneGroup.position.y = camera.position.y + airplaneState.height + airplaneState.y;
       }
       
       // Update scale
       airplaneGroup.scale.set(airplaneState.size, airplaneState.size, airplaneState.size);
       
-      // Orient airplane to face forward direction with tilt and pitch
+      // Orient airplane to face heading direction with tilt and pitch
       const lookTarget = airplaneGroup.position.clone().add(forward);
       airplaneGroup.lookAt(lookTarget);
       airplaneGroup.rotation.z = airplaneState.tilt;
@@ -1296,43 +1536,43 @@
       }
     }
 
-    // Keyboard controls for airplane
+    // Keyboard controls for airplane - W/S for throttle, A/D for strafe
     window.addEventListener('keydown', (e) => {
       // Prevent spacebar from scrolling page
       if (e.code === 'Space') {
         e.preventDefault();
       }
       if (!airplaneState.enabled) return;
-      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
-        keysPressed.left = true;
-        e.preventDefault();
-      }
-      if (e.code === 'ArrowRight' || e.code === 'KeyD') {
-        keysPressed.right = true;
-        e.preventDefault();
-      }
       if (e.code === 'ArrowUp' || e.code === 'KeyW') {
-        keysPressed.up = true;
+        keysPressed.throttleUp = true;
         e.preventDefault();
       }
       if (e.code === 'ArrowDown' || e.code === 'KeyS') {
-        keysPressed.down = true;
+        keysPressed.throttleDown = true;
+        e.preventDefault();
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        keysPressed.strafeLeft = true;
+        e.preventDefault();
+      }
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        keysPressed.strafeRight = true;
         e.preventDefault();
       }
     });
 
     window.addEventListener('keyup', (e) => {
-      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
-        keysPressed.left = false;
-      }
-      if (e.code === 'ArrowRight' || e.code === 'KeyD') {
-        keysPressed.right = false;
-      }
       if (e.code === 'ArrowUp' || e.code === 'KeyW') {
-        keysPressed.up = false;
+        keysPressed.throttleUp = false;
       }
       if (e.code === 'ArrowDown' || e.code === 'KeyS') {
-        keysPressed.down = false;
+        keysPressed.throttleDown = false;
+      }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        keysPressed.strafeLeft = false;
+      }
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        keysPressed.strafeRight = false;
       }
       // G key cycles camera modes
       if (e.code === 'KeyG') {
@@ -1349,35 +1589,45 @@
       // Get origin from airplane position or camera position
       let origin;
       if (airplaneGroup && airplaneState.enabled) {
-        // Read directly from airplaneState which has the current position
-        const isChaseStyle = params.cameraMode === 'chase' || params.cameraMode === 'topdown' || params.cameraMode === 'isometric';
-        if (isChaseStyle) {
-          // In chase modes, use the strafe position (x) and z=0 since terrain scrolls
-          origin = new THREE.Vector3(
-            airplaneState.x,
-            airplaneState.baseAltitude + airplaneState.y,
-            0
-          );
-        } else {
-          origin = airplaneGroup.position.clone();
-        }
+        // Use the airplane's actual world position (includes strafe offset)
+        origin = airplaneState.worldPos.clone();
       } else {
         origin = camera.position.clone();
         origin.y = 0;
       }
       
-      radarState.active = true;
-      radarState.startTime = performance.now() * 0.001;
-      // Update expand speed based on current settings
+      // Always spawn a new visual ring (multiple rings supported)
+      spawnVisualRing(origin);
+      
+      const now = performance.now() * 0.001;
       radarState.expandSpeed = radarState.maxRadius / radarState.expandDuration;
+      const totalDuration = radarState.expandDuration + radarState.persistDuration + radarState.fadeDuration;
+      
+      if (radarState.active) {
+        // ADDITIVE: Already active - extend the timer, don't reset animation
+        // Extend fade end time from now
+        radarState.fadeEndTime = now + radarState.persistDuration + radarState.fadeDuration;
+        // Keep fade at 1.0 (refresh the timer)
+        pointMaterial.uniforms.uRadarFade.value = 1.0;
+        // DON'T reset: startTime, uRadarTime, uRadarRadius, currentRadius
+        // The ring continues expanding from where it was
+      } else {
+        // Fresh start - no active pulse
+        radarState.active = true;
+        radarState.startTime = now;
+        radarState.fadeEndTime = now + totalDuration;
+        radarState.currentRadius = 0;
+        
+        pointMaterial.uniforms.uRadarRadius.value = 0.0;
+        pointMaterial.uniforms.uRadarFade.value = 1.0;
+        pointMaterial.uniforms.uRadarTime.value = 0.0;
+        pointMaterial.uniforms.uRadarOrigin.value.copy(origin);
+      }
       
       pointMaterial.uniforms.uRadarActive.value = 1.0;
-      pointMaterial.uniforms.uRadarOrigin.value.copy(origin);
-      pointMaterial.uniforms.uRadarRadius.value = 0.0;
-      pointMaterial.uniforms.uRadarFade.value = 1.0;
-      pointMaterial.uniforms.uRadarTime.value = 0.0;
       pointMaterial.uniforms.uRadarRainHeight.value = radarState.rainHeight;
       pointMaterial.uniforms.uRadarRainDuration.value = radarState.rainDuration;
+      pointMaterial.uniforms.uRainSpawnRadius.value = radarState.rainSpawnRadius;
       pointMaterial.uniforms.uRadarExpandSpeed.value = radarState.expandSpeed;
       pointMaterial.uniforms.uRadarShowRing.value = radarState.showRing ? 1.0 : 0.0;
       pointMaterial.uniforms.uRadarRingFeather.value = radarState.ringFeather;
@@ -1389,12 +1639,6 @@
       pointMaterial.uniforms.uRainParticleWidth.value = radarState.rainParticleWidth;
       pointMaterial.uniforms.uRainParticleLength.value = radarState.rainParticleLength;
       pointMaterial.uniforms.uRainImpactScale.value = radarState.rainImpactScale;
-      
-      // Position visual ring at origin, at airplane altitude
-      if (visualRing) {
-        visualRing.position.set(origin.x, origin.y, origin.z);
-        visualRing.visible = radarState.visualRingEnabled;
-      }
     }
     
     function cycleCameraMode() {
@@ -1414,8 +1658,8 @@
         if (airplaneGroup) airplaneGroup.visible = true;
       }
       // Reset airplane state when switching modes
-      airplaneState.x = 0;
-      airplaneState.targetX = 0;
+      airplaneState.heading = 0;
+      airplaneState.targetHeading = 0;
       airplaneState.y = 0;
       airplaneState.targetY = 0;
       airplaneState.tilt = 0;
@@ -1433,7 +1677,7 @@
 
     // Tiling with Points
     let tilesPoints = [];
-    const state = { tileSize: 12, tilesX: 7, tilesZ: 10, scrollSpeed: 3.0 };
+    const state = { tileSize: 44, tilesX: 5, tilesZ: 4, scrollSpeed: 3.0 };
     const scrollOffset = new THREE.Vector2(0, 0);
 
     function buildBaseGeometry() {
@@ -1506,22 +1750,22 @@
     const params = {
       // Heightmap
       terrainColor: '#8a8f9a',
-      scale: 2.3,
-      tileSize: 12,
-      tilesX: 7,
-      tilesZ: 10,
+      scale: 8.0,
+      tileSize: 44,
+      tilesX: 5,
+      tilesZ: 4,
       // Particles
-      pointSize: 0.01,
+      pointSize: 0.08,
       jitter: 0.02,
       hoverRadius: 1.6,
       hoverStrength: 0.8,
       hoverSnap: 2.0,
       hoverColor: '#ffcc55',
-      cols: 416,
-      rows: 416,
+      cols: 200,
+      rows: 200,
       // Mask
-      maskRadius: 0.1,
-      maskFeather: 0.0,
+      maskRadius: 8.8,
+      maskFeather: 4.9,
       // Animation
       scrollSpeed: 3.0,
       animateScroll: true,
@@ -1534,8 +1778,8 @@
       // Fog
       fogEnabled: true,
       fogColor: '#0e0f13',
-      fogNear: 12,
-      fogFar: 1,
+      fogStart: 1,
+      fogEnd: 34,
       // Camera modes: 'chase', 'topdown', 'isometric'
       cameraMode: 'chase',
       chaseCamDistance: 3.3,
@@ -1559,6 +1803,10 @@
       airplaneHoverRadius: 0.5,
       airplaneColorSafe: '#ff9000',   // orange when high/safe
       airplaneColorDanger: '#ff0000', // red when low/danger
+      // Strafe settings
+      strafeSpeed: 1.0,
+      strafeEasing: 2.0,
+      maxStrafe: 8.0,
     };
 
     // Helper functions
@@ -1579,8 +1827,8 @@
       if (params.fogEnabled) {
         scene.fog = new THREE.Fog(
           params.fogColor, 
-          Math.min(params.fogNear, params.fogFar - 0.001), 
-          Math.max(params.fogNear + 0.001, params.fogFar)
+          params.fogStart,
+          params.fogEnd
         );
         scene.background = new THREE.Color(params.fogColor);
       } else {
@@ -1602,14 +1850,17 @@
     });
     heightmapFolder.addBinding(params, 'tileSize', { min: 2, max: 50, step: 1 }).on('change', (ev) => {
       state.tileSize = Math.max(1, ev.value);
+      scrollOffset.set(0, 0); // Reset scroll to center tiles
       rebuildTiling();
     });
     heightmapFolder.addBinding(params, 'tilesX', { min: 1, max: 20, step: 1 }).on('change', (ev) => {
       state.tilesX = Math.max(1, Math.min(20, ev.value));
+      scrollOffset.set(0, 0); // Reset scroll to center tiles
       rebuildTiling();
     });
     heightmapFolder.addBinding(params, 'tilesZ', { min: 1, max: 20, step: 1 }).on('change', (ev) => {
       state.tilesZ = Math.max(1, Math.min(20, ev.value));
+      scrollOffset.set(0, 0); // Reset scroll to center tiles
       rebuildTiling();
     });
 
@@ -1672,8 +1923,8 @@
       if (airplaneGroup) airplaneGroup.visible = ev.value;
       // Reset position when toggled on
       if (ev.value) {
-        airplaneState.x = 0;
-        airplaneState.targetX = 0;
+        airplaneState.heading = 0;
+        airplaneState.targetHeading = 0;
         airplaneState.y = 0;
         airplaneState.targetY = 0;
         airplaneState.tilt = 0;
@@ -1691,6 +1942,16 @@
     });
     airplaneFolder.addBinding(params, 'airplaneAltitudeRange', { min: 0.5, max: 5, step: 0.1, label: 'Alt Range' }).on('change', (ev) => {
       airplaneState.altitudeRange = ev.value;
+    });
+    airplaneFolder.addBlade({ view: 'separator' });
+    airplaneFolder.addBinding(params, 'strafeSpeed', { min: 0.1, max: 5, step: 0.1, label: 'Strafe Speed' }).on('change', (ev) => {
+      airplaneState.strafeSpeed = ev.value;
+    });
+    airplaneFolder.addBinding(params, 'strafeEasing', { min: 0.5, max: 10, step: 0.5, label: 'Strafe Easing' }).on('change', (ev) => {
+      airplaneState.strafeEasing = ev.value;
+    });
+    airplaneFolder.addBinding(params, 'maxStrafe', { min: 1, max: 15, step: 0.5, label: 'Max Strafe' }).on('change', (ev) => {
+      airplaneState.maxStrafe = ev.value;
     });
     airplaneFolder.addBlade({ view: 'separator' });
     airplaneFolder.addBinding(params, 'airplaneHeight', { min: -5, max: 1, step: 0.1, label: 'Height' }).on('change', (ev) => {
@@ -1721,7 +1982,7 @@
       view: 'text',
       label: '',
       parse: (v) => String(v),
-      value: '↑↓←→ or WASD to fly',
+      value: 'WS=Throttle, AD=Strafe',
     });
     airplaneHint.disabled = true;
     
@@ -1738,6 +1999,7 @@
     radarFolder.addBlade({ view: 'separator' });
     radarFolder.addBinding(radarState, 'rainHeight', { min: 2, max: 50, step: 0.5, label: 'Rain Height' });
     radarFolder.addBinding(radarState, 'rainDuration', { min: 0.1, max: 1.5, step: 0.05, label: 'Rain Speed' });
+    radarFolder.addBinding(radarState, 'rainSpawnRadius', { min: 0, max: 5, step: 0.1, label: 'Rain Origin' });
     radarFolder.addBlade({ view: 'separator' });
     radarFolder.addBinding(radarState, 'rainColor', { view: 'color', label: 'Rain Color' });
     radarFolder.addBinding(radarState, 'colorFadeDuration', { min: 0.1, max: 3, step: 0.1, label: 'Color Fade Time' });
@@ -1775,8 +2037,8 @@
     cameraFolder.addBlade({ view: 'separator' });
     cameraFolder.addBinding(params, 'fogEnabled', { label: 'Fog Enabled' }).on('change', applyFogFromParams);
     cameraFolder.addBinding(params, 'fogColor', { view: 'color', label: 'Fog Color' }).on('change', applyFogFromParams);
-    cameraFolder.addBinding(params, 'fogNear', { min: 0, max: 500, step: 1, label: 'Fog Near' }).on('change', applyFogFromParams);
-    cameraFolder.addBinding(params, 'fogFar', { min: 1, max: 1000, step: 1, label: 'Fog Far' }).on('change', applyFogFromParams);
+    cameraFolder.addBinding(params, 'fogStart', { min: 0, max: 50, step: 1, label: 'Fog Start' }).on('change', applyFogFromParams);
+    cameraFolder.addBinding(params, 'fogEnd', { min: 1, max: 50, step: 1, label: 'Fog End' }).on('change', applyFogFromParams);
     cameraFolder.addBlade({ view: 'separator' });
     cameraFolder.addButton({ title: 'Reset Camera' }).on('click', () => {
       camera.position.copy(defaultCamPos);
@@ -1809,6 +2071,56 @@
     cameraFolder.addBinding(params, 'isoCamHeight', { min: 1, max: 10, step: 0.5, label: 'Iso Height' });
     cameraFolder.addBinding(params, 'chaseCamAltitude', { min: 0.5, max: 5, step: 0.1, label: 'Flight Altitude' }).on('change', (ev) => {
       airplaneState.baseAltitude = ev.value;
+    });
+
+    // Dev Tools folder - for saving params during development
+    const devToolsFolder = pane.addFolder({ title: 'Dev Tools', expanded: false });
+    const copyParamsBtn = devToolsFolder.addButton({ title: '📋 Copy Params to Clipboard' });
+    copyParamsBtn.on('click', () => {
+      // Format params object as source code
+      const formatValue = (v) => {
+        if (typeof v === 'string') return `'${v}'`;
+        if (typeof v === 'boolean') return v ? 'true' : 'false';
+        return v;
+      };
+      
+      const lines = ['    const params = {'];
+      const groups = {
+        'Heightmap': ['terrainColor', 'scale', 'tileSize', 'tilesX', 'tilesZ'],
+        'Particles': ['pointSize', 'jitter', 'hoverRadius', 'hoverStrength', 'hoverSnap', 'hoverColor', 'cols', 'rows'],
+        'Mask': ['maskRadius', 'maskFeather'],
+        'Animation': ['scrollSpeed', 'animateScroll'],
+        'Camera': ['camYaw', 'camPitch', 'camFov', 'camHeight', 'camZ'],
+        'Fog': ['fogEnabled', 'fogColor', 'fogStart', 'fogEnd'],
+        'Camera modes': ['cameraMode', 'chaseCamDistance', 'chaseCamHeight', 'chaseCamAltitude', 'topCamHeight', 'isoCamDistance', 'isoCamHeight'],
+        'Airplane': ['airplaneEnabled', 'airplaneSpeed', 'airplaneMaxOffset', 'airplaneVertSpeed', 'airplaneAltitudeRange', 'airplaneHeight', 'airplaneSize', 'airplaneDistance'],
+        'Hover highlights': ['mouseHoverEnabled', 'airplaneHoverEnabled', 'airplaneHoverRadius', 'airplaneColorSafe', 'airplaneColorDanger'],
+        'Strafe settings': ['strafeSpeed', 'strafeEasing', 'maxStrafe'],
+      };
+      
+      Object.entries(groups).forEach(([groupName, keys], groupIdx, groupArr) => {
+        lines.push(`      // ${groupName}`);
+        keys.forEach((key, keyIdx, keyArr) => {
+          if (params.hasOwnProperty(key)) {
+            const isLastInGroup = keyIdx === keyArr.length - 1;
+            const isLastGroup = groupIdx === groupArr.length - 1;
+            const comma = (isLastInGroup && isLastGroup) ? '' : ',';
+            lines.push(`      ${key}: ${formatValue(params[key])}${comma}`);
+          }
+        });
+      });
+      lines.push('    };');
+      
+      const output = lines.join('\n');
+      navigator.clipboard.writeText(output).then(() => {
+        // Flash feedback on button
+        copyParamsBtn.title = '✅ Copied!';
+        setTimeout(() => { copyParamsBtn.title = '📋 Copy Params to Clipboard'; }, 1500);
+      }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard. Check console for the params.');
+        console.log(output);
+      });
     });
 
     // ---- URL parameter configuration ----
@@ -1854,8 +2166,8 @@
       setParam('cols', 'cols');
       setParam('rows', 'rows');
       setParam('fogEnabled', 'fog');
-      setParam('fogNear', 'near');
-      setParam('fogFar', 'far');
+      setParam('fogStart', 'fogStart');
+      setParam('fogEnd', 'fogEnd');
       // colors as hex
       if (urlParams.has('terrain')) {
         params.terrainColor = urlParams.get('terrain');
@@ -2119,6 +2431,68 @@
       renderer.setSize(width, height);
     });
 
+    // ========== SPEED INDICATOR ==========
+    const speedIndicator = document.getElementById('speed-indicator');
+    const speedMarker = speedIndicator.querySelector('.speed-marker');
+    const speedValue = speedIndicator.querySelector('.speed-value');
+    const maxDisplaySpeed = 10.0; // Maximum speed for display scaling
+    
+    function updateSpeedUI() {
+      const currentSpeed = state.scrollSpeed;
+      
+      // Map speed to percentage (0 at bottom, maxSpeed at top)
+      const percent = (currentSpeed / maxDisplaySpeed) * 100;
+      const clampedPercent = Math.max(5, Math.min(95, percent));
+      
+      speedMarker.style.bottom = clampedPercent + '%';
+      speedValue.textContent = currentSpeed.toFixed(1);
+    }
+    
+    // ========== ALTITUDE INDICATOR ==========
+    const altitudeIndicator = document.getElementById('altitude-indicator');
+    const altMarker = altitudeIndicator.querySelector('.alt-marker');
+    const altValue = altitudeIndicator.querySelector('.alt-value');
+    
+    function updateAltitudeUI() {
+      // Get current altitude (baseAltitude + y offset), clamped to minimum of 0
+      const currentAlt = Math.max(0, airplaneState.baseAltitude + airplaneState.y);
+      
+      // Map altitude to percentage (0 at bottom, maxAlt at top)
+      const maxAlt = airplaneState.baseAltitude + airplaneState.altitudeRange;
+      const percent = (currentAlt / maxAlt) * 100;
+      const clampedPercent = Math.max(5, Math.min(95, percent));
+      
+      altMarker.style.bottom = clampedPercent + '%';
+      altValue.textContent = currentAlt.toFixed(1);
+    }
+    
+    // Update indicator positions based on airplane screen position
+    const indicatorOffset = 80; // pixels from airplane center
+    function updateIndicatorPositions() {
+      if (!airplaneGroup || !renderer) return;
+      
+      // Get canvas dimensions (this is the actual 3D rendering area)
+      const canvas = renderer.domElement;
+      const rect = canvas.getBoundingClientRect();
+      
+      // Project airplane position to screen coordinates
+      const airplaneScreenPos = new THREE.Vector3();
+      airplaneScreenPos.copy(airplaneGroup.position);
+      airplaneScreenPos.project(camera);
+      
+      // Convert from NDC (-1 to 1) to screen pixels relative to canvas
+      const canvasX = (airplaneScreenPos.x * 0.5 + 0.5) * rect.width + rect.left;
+      const screenY = window.innerHeight / 2; // Keep vertical centered
+      
+      // Position speed indicator to the left of airplane
+      speedIndicator.style.left = (canvasX - indicatorOffset) + 'px';
+      speedIndicator.style.top = screenY + 'px';
+      
+      // Position altitude indicator to the right of airplane  
+      altitudeIndicator.style.left = (canvasX + indicatorOffset) + 'px';
+      altitudeIndicator.style.top = screenY + 'px';
+    }
+
     // Animate
     function animate() {
       requestAnimationFrame(animate);
@@ -2138,11 +2512,12 @@
         pointMaterial.uniforms.uHoverCenter.value.set(9999.0, 9999.0);
       }
       if (params.animateScroll && tilesPoints && tilesPoints.length) {
-        const forward = new THREE.Vector3();
-        camera.getWorldDirection(forward);
-        forward.y = 0;
-        if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
-        forward.normalize();
+        // Scroll direction follows airplane heading (heading 0 = -Z direction)
+        const forward = new THREE.Vector3(
+          Math.sin(airplaneState.heading),
+          0,
+          -Math.cos(airplaneState.heading)
+        );
         const step = state.scrollSpeed * delta;
         scrollOffset.x += forward.x * step;
         scrollOffset.y += forward.z * step;
@@ -2154,80 +2529,88 @@
       if (airplaneGroup && airplaneState.enabled) {
         pointMaterial.uniforms.uAirplanePos.value.copy(airplaneGroup.position);
         // Update mask center to follow airplane in chase-style modes
+        // In free roam, airplane stays at origin (0,0)
         const isChaseStyle = params.cameraMode === 'chase' || params.cameraMode === 'topdown' || params.cameraMode === 'isometric';
         if (isChaseStyle) {
-          pointMaterial.uniforms.uMaskCenter.value.set(airplaneState.worldPos.x, airplaneState.worldPos.z);
+          pointMaterial.uniforms.uMaskCenter.value.set(0, 0);
         }
+        // Update UI indicators
+        updateAltitudeUI();
+        updateSpeedUI();
+        updateIndicatorPositions();
       } else {
         pointMaterial.uniforms.uAirplanePos.value.set(9999, 9999, 9999);
       }
       
-      // Update radar pulse
+      // Update radar pulse (particle landscape effect)
       if (radarState.active) {
         const now = performance.now() * 0.001;
         const elapsed = now - radarState.startTime;
-        const totalDuration = radarState.expandDuration + radarState.persistDuration + radarState.fadeDuration;
         
         // Update time uniform for rain animation
         pointMaterial.uniforms.uRadarTime.value = elapsed;
         
-        let currentRadius = 0;
+        // Ring expansion: grows until maxRadius, then stays there
+        // This is independent of fade timing, so re-pulsing doesn't reset the ring
+        if (radarState.currentRadius < radarState.maxRadius) {
+          radarState.currentRadius = Math.min(elapsed * radarState.expandSpeed, radarState.maxRadius);
+        }
+        
+        // Fade timing based on fadeEndTime (which can be extended by re-pulsing)
+        const fadeStartTime = radarState.fadeEndTime - radarState.fadeDuration;
         let currentFade = 1.0;
         
-        if (elapsed < radarState.expandDuration) {
-          // Expanding phase
-          const expandProgress = elapsed / radarState.expandDuration;
-          currentRadius = expandProgress * radarState.maxRadius;
-          currentFade = 1.0;
-          pointMaterial.uniforms.uRadarRadius.value = currentRadius;
-          pointMaterial.uniforms.uRadarFade.value = currentFade;
-        } else if (elapsed < radarState.expandDuration + radarState.persistDuration) {
-          // Persist phase - fully expanded, holding
-          currentRadius = radarState.maxRadius;
-          currentFade = 1.0;
-          pointMaterial.uniforms.uRadarRadius.value = currentRadius;
-          pointMaterial.uniforms.uRadarFade.value = currentFade;
-        } else if (elapsed < totalDuration) {
-          // Fade out phase
-          const fadeProgress = (elapsed - radarState.expandDuration - radarState.persistDuration) / radarState.fadeDuration;
-          currentRadius = radarState.maxRadius;
-          currentFade = 1.0 - fadeProgress;
-          pointMaterial.uniforms.uRadarRadius.value = currentRadius;
-          pointMaterial.uniforms.uRadarFade.value = currentFade;
-        } else {
-          // Done
+        if (now >= radarState.fadeEndTime) {
+          // Done - fully faded
           radarState.active = false;
+          radarState.currentRadius = 0;
+          radarState.persistentRevealRadius = 0.0;
           pointMaterial.uniforms.uRadarActive.value = 0.0;
           pointMaterial.uniforms.uRadarFade.value = 0.0;
-          if (visualRing) visualRing.visible = false;
+          pointMaterial.uniforms.uPersistentRevealRadius.value = 0.0;
+        } else if (now >= fadeStartTime) {
+          // Fade out phase
+          const fadeProgress = (now - fadeStartTime) / radarState.fadeDuration;
+          currentFade = 1.0 - fadeProgress;
+          pointMaterial.uniforms.uRadarFade.value = currentFade;
+        } else {
+          // Still in expand or persist phase - full visibility
+          currentFade = 1.0;
+          pointMaterial.uniforms.uRadarFade.value = 1.0;
         }
         
-        // Update visual ring - keep it positioned at radar origin
-        if (radarState.active && visualRing) {
-          const origin = pointMaterial.uniforms.uRadarOrigin.value;
-          visualRing.position.set(origin.x, origin.y, origin.z);
-          updateVisualRing(currentRadius, currentFade);
-        }
+        // Update radius uniform
+        pointMaterial.uniforms.uRadarRadius.value = radarState.currentRadius;
         
-        // Update rain particle shape uniforms in real-time
-        pointMaterial.uniforms.uRainParticleWidth.value = radarState.rainParticleWidth;
-        pointMaterial.uniforms.uRainParticleLength.value = radarState.rainParticleLength;
-        pointMaterial.uniforms.uRainImpactScale.value = radarState.rainImpactScale;
+        // Update persistent reveal radius (only grows, never shrinks)
+        radarState.persistentRevealRadius = Math.max(radarState.persistentRevealRadius, radarState.currentRadius);
+        pointMaterial.uniforms.uPersistentRevealRadius.value = radarState.persistentRevealRadius;
       }
+      
+      // Update all visual rings (multiple independent rings)
+      updateVisualRings();
+      
+      // Update rain particle shape uniforms in real-time
+      pointMaterial.uniforms.uRainParticleWidth.value = radarState.rainParticleWidth;
+      pointMaterial.uniforms.uRainParticleLength.value = radarState.rainParticleLength;
+      pointMaterial.uniforms.uRainImpactScale.value = radarState.rainImpactScale;
       
       // Camera mode logic with orbit support
       // Use stable airplane position (worldPos) to avoid shake affecting camera
+      // Camera positions behind the airplane based on heading direction
       if (params.cameraMode === 'chase' && airplaneGroup && airplaneState.enabled) {
-        // Chase cam: positioned behind the airplane with orbit
+        // Chase cam: positioned behind the airplane based on heading
         const chaseDist = params.chaseCamDistance;
         const chaseHeight = params.chaseCamHeight;
         
         // Use stable airplane position
         const stablePos = airplaneState.worldPos;
         
-        // Apply orbit azimuth to position camera around airplane
-        const orbitX = Math.sin(cameraOrbit.azimuth) * chaseDist;
-        const orbitZ = Math.cos(cameraOrbit.azimuth) * chaseDist;
+        // Calculate "behind" direction based on heading + orbit
+        // heading 0 = facing -Z, so "behind" is +Z
+        const behindAngle = airplaneState.heading + Math.PI + cameraOrbit.azimuth;
+        const orbitX = Math.sin(behindAngle) * chaseDist;
+        const orbitZ = -Math.cos(behindAngle) * chaseDist;
         // Apply elevation to height
         const elevationOffset = cameraOrbit.elevation * chaseDist;
         
@@ -2243,7 +2626,7 @@
         // Look at the stable airplane position
         camera.lookAt(stablePos);
       } else if (params.cameraMode === 'topdown' && airplaneGroup && airplaneState.enabled) {
-        // Top-down cam: above the airplane with orbit rotation
+        // Top-down cam: above the airplane, rotates with heading
         const topHeight = params.topCamHeight;
         
         // Use stable airplane position (worldPos) instead of shake-affected position
@@ -2251,8 +2634,9 @@
         
         // Apply orbit for slight offset from directly above
         const orbitOffset = cameraOrbit.elevation * topHeight * 0.5;
-        const orbitX = Math.sin(cameraOrbit.azimuth) * orbitOffset;
-        const orbitZ = Math.cos(cameraOrbit.azimuth) * orbitOffset;
+        const totalAngle = airplaneState.heading + cameraOrbit.azimuth;
+        const orbitX = Math.sin(totalAngle) * orbitOffset;
+        const orbitZ = -Math.cos(totalAngle) * orbitOffset;
         
         const targetCamPos = new THREE.Vector3(
           stablePos.x + orbitX,
@@ -2264,19 +2648,20 @@
         camera.position.lerp(targetCamPos, Math.min(1, 8 * delta));
         
         // For top-down, set rotation directly instead of lookAt to avoid gimbal lock
-        // Rotate to look straight down (-Y), with Z as forward direction
-        camera.rotation.set(-Math.PI / 2, 0, -cameraOrbit.azimuth);
+        // Rotate to look straight down (-Y), with airplane heading as "up" direction
+        camera.rotation.set(-Math.PI / 2, 0, -airplaneState.heading - cameraOrbit.azimuth);
       } else if (params.cameraMode === 'isometric' && airplaneGroup && airplaneState.enabled) {
-        // Isometric cam: view from behind and above with orbit
+        // Isometric cam: view from behind and above based on heading
         const isoDist = params.isoCamDistance;
         const isoHeight = params.isoCamHeight;
         
         // Use stable airplane position
         const stablePos = airplaneState.worldPos;
         
-        // Apply orbit azimuth to position camera around airplane
-        const orbitX = Math.sin(cameraOrbit.azimuth) * isoDist;
-        const orbitZ = Math.cos(cameraOrbit.azimuth) * isoDist;
+        // Calculate "behind" direction based on heading + orbit
+        const behindAngle = airplaneState.heading + Math.PI + cameraOrbit.azimuth;
+        const orbitX = Math.sin(behindAngle) * isoDist;
+        const orbitZ = -Math.cos(behindAngle) * isoDist;
         // Apply elevation to height
         const elevationOffset = cameraOrbit.elevation * isoDist;
         
