@@ -201,8 +201,8 @@
       left: 0;
       right: 280px;
       font-size: 11px;
-      color: #000;
-      background: #ff9000;
+      color: #ff9000;
+      background: #000;
       padding: 4px 12px;
       z-index: 100;
       display: flex;
@@ -219,7 +219,7 @@
       white-space: nowrap;
     }
     #controlsBar .control-item kbd {
-      background: rgba(0, 0, 0, 0.15);
+      background: rgba(255, 144, 0, 0.2);
       padding: 1px 4px;
       border-radius: 2px;
       font-family: inherit;
@@ -230,11 +230,11 @@
       white-space: nowrap;
     }
     #controlsBar a {
-      color: #000;
-      text-decoration: underline;
+      color: #ff9000;
+      text-decoration: none;
     }
     #controlsBar a:hover {
-      opacity: 0.7;
+      text-decoration: underline;
     }
     a, a:visited { color: #9bd; text-decoration: none; }
     a:hover { text-decoration: underline; }
@@ -273,98 +273,6 @@
     #controlsBar .mobile-hint {
       display: none;
     }
-    
-    /* Altitude Indicator (brutalist avionics style) */
-    #altitude-indicator {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 50px;
-      height: 100px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-    }
-    #altitude-indicator .alt-track {
-      width: 2px;
-      height: 100%;
-      background: rgba(255, 144, 0, 0.3);
-    }
-    #altitude-indicator .alt-marker {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-16px);
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      transition: bottom 0.1s ease-out;
-    }
-    #altitude-indicator .alt-tick {
-      width: 12px;
-      height: 2px;
-      background: #ff9000;
-      box-shadow: 0 0 6px rgba(255, 144, 0, 0.8);
-    }
-    #altitude-indicator .alt-value {
-      font-size: 10px;
-      color: #ff9000;
-      font-weight: 600;
-      text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
-      min-width: 24px;
-    }
-    
-    /* Throttle/Speed Indicator (brutalist avionics style) */
-    #speed-indicator {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 50px;
-      height: 100px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-    }
-    #speed-indicator .speed-track {
-      width: 2px;
-      height: 100%;
-      background: rgba(255, 144, 0, 0.3);
-    }
-    #speed-indicator .speed-marker {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      transition: bottom 0.1s ease-out;
-    }
-    #speed-indicator .speed-tick {
-      width: 12px;
-      height: 2px;
-      background: #ff9000;
-      box-shadow: 0 0 6px rgba(255, 144, 0, 0.8);
-    }
-    #speed-indicator .speed-value {
-      font-size: 10px;
-      color: #ff9000;
-      font-weight: 600;
-      text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
-      min-width: 24px;
-    }
-    
-    @media (max-width: 768px) {
-      #speed-indicator {
-        left: 10px;
-      }
-      #altitude-indicator {
-        left: auto;
-        right: 10px;
-      }
-    }
   </style>
 </head>
 <body>
@@ -389,7 +297,7 @@
             <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/>
           </svg>
         </span>
-        <span>WS = Throttle, Mouse = Steer</span>
+        <span>WS = Speed, Mouse = Steer</span>
       </div>
       <div class="lock-feature">
         <span class="lock-feature-icon">
@@ -424,34 +332,16 @@
   </div>
   <div id="controlsBar">
     <div class="controls">
-      <span class="control-item"><kbd>Space</kbd> Ping Sonar</span>
-      <span class="control-item"><kbd>G</kbd> Change Camera</span>
-      <span class="control-item"><kbd>W</kbd><kbd>S</kbd> Throttle</span>
-      <span class="control-item"><kbd>A</kbd><kbd>D</kbd> Strafe</span>
-      <span class="control-item"><kbd>Mouse</kbd> Steer</span>
-      <span class="control-item"><kbd>Scroll</kbd> Zoom</span>
+      <span class="control-item airplane-control" style="display: none;"><kbd>Space</kbd> Ping Sonar</span>
+      <span class="control-item airplane-control" style="display: none;"><kbd>G</kbd> Change Camera</span>
+      <span class="control-item airplane-control" style="display: none;"><kbd>W</kbd><kbd>S</kbd> Speed</span>
+      <span class="control-item airplane-control" style="display: none;"><kbd>A</kbd><kbd>D</kbd> Strafe</span>
+      <span class="control-item airplane-control" style="display: none;"><kbd>Mouse</kbd> Steer</span>
     </div>
-    <span class="mobile-hint">Tap anywhere to ping sonar</span>
-    <span class="credit">Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a></span>
+    <span class="mobile-hint airplane-control" style="display: none;">Tap anywhere to ping sonar</span>
+    <span class="credit">Project by <a href="https://x.com/taylor_sntx" target="_blank" rel="noopener">Taylor</a> · <a href="https://ko-fi.com/taylor_sntx" target="_blank" rel="noopener">Support Development</a></span>
   </div>
   
-  <!-- Speed/Throttle Indicator -->
-  <div id="speed-indicator">
-    <div class="speed-track"></div>
-    <div class="speed-marker" style="bottom: 30%">
-      <span class="speed-value">3.0</span>
-      <div class="speed-tick"></div>
-    </div>
-  </div>
-  
-  <!-- Altitude Indicator -->
-  <div id="altitude-indicator">
-    <div class="alt-track"></div>
-    <div class="alt-marker" style="bottom: 50%">
-      <div class="alt-tick"></div>
-      <span class="alt-value">1.5</span>
-    </div>
-  </div>
   <input id="heightmapFile" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
 
   <script>
@@ -1068,7 +958,7 @@
     let airplane = null;
     let airplaneGroup = null;
     const airplaneState = {
-      enabled: true,
+      enabled: false,
       x: 0,          // current X position (world space offset from center)
       targetX: 0,    // target X position
       y: 0,          // current Y offset (altitude adjustment)
@@ -1586,15 +1476,11 @@
     });
     
     function triggerRadarPulse() {
-      // Get origin from airplane position or camera position
-      let origin;
-      if (airplaneGroup && airplaneState.enabled) {
-        // Use the airplane's actual world position (includes strafe offset)
-        origin = airplaneState.worldPos.clone();
-      } else {
-        origin = camera.position.clone();
-        origin.y = 0;
-      }
+      // Only allow radar pulse when airplane is enabled
+      if (!airplaneState.enabled) return;
+      
+      // Get origin from airplane position
+      const origin = airplaneState.worldPos.clone();
       
       // Always spawn a new visual ring (multiple rings supported)
       spawnVisualRing(origin);
@@ -1651,13 +1537,7 @@
     function setCameraMode(mode) {
       params.cameraMode = mode;
       
-      // All modes now follow the airplane, so always enable it
-      if (!airplaneState.enabled) {
-        params.airplaneEnabled = true;
-        airplaneState.enabled = true;
-        if (airplaneGroup) airplaneGroup.visible = true;
-      }
-      // Reset airplane state when switching modes
+      // Reset airplane state when switching modes (if airplane is enabled)
       airplaneState.heading = 0;
       airplaneState.targetHeading = 0;
       airplaneState.y = 0;
@@ -1789,7 +1669,7 @@
       isoCamDistance: 2.0,
       isoCamHeight: 4.0,
       // Airplane
-      airplaneEnabled: true,
+      airplaneEnabled: false,
       airplaneSpeed: 3,
       airplaneMaxOffset: 5.5,
       airplaneVertSpeed: 2,
@@ -1799,7 +1679,7 @@
       airplaneDistance: 3.5,
       // Hover highlights
       mouseHoverEnabled: false,
-      airplaneHoverEnabled: true,
+      airplaneHoverEnabled: false,
       airplaneHoverRadius: 0.5,
       airplaneColorSafe: '#ff9000',   // orange when high/safe
       airplaneColorDanger: '#ff0000', // red when low/danger
@@ -1917,10 +1797,14 @@
     animationFolder.addBinding(params, 'animateScroll', { label: 'Animate' });
 
     // Airplane folder
-    const airplaneFolder = pane.addFolder({ title: 'Airplane', expanded: true });
+    const airplaneFolder = pane.addFolder({ title: 'Airplane', expanded: false });
     airplaneFolder.addBinding(params, 'airplaneEnabled', { label: 'Enable Airplane' }).on('change', (ev) => {
       airplaneState.enabled = ev.value;
       if (airplaneGroup) airplaneGroup.visible = ev.value;
+      // Show/hide airplane control hints
+      document.querySelectorAll('.airplane-control').forEach(el => {
+        el.style.display = ev.value ? '' : 'none';
+      });
       // Reset position when toggled on
       if (ev.value) {
         airplaneState.heading = 0;
@@ -1972,7 +1856,6 @@
     });
     airplaneFolder.addBinding(params, 'airplaneColorSafe', { view: 'color', label: 'Safe Color' }).on('change', (ev) => {
       pointMaterial.uniforms.uAirplaneColorFar.value.set(ev.value);
-      document.getElementById('controlsBar').style.background = ev.value;
     });
     airplaneFolder.addBinding(params, 'airplaneColorDanger', { view: 'color', label: 'Danger Color' }).on('change', (ev) => {
       pointMaterial.uniforms.uAirplaneColorClose.value.set(ev.value);
@@ -1982,7 +1865,7 @@
       view: 'text',
       label: '',
       parse: (v) => String(v),
-      value: 'WS=Throttle, AD=Strafe',
+      value: 'WS=Speed, AD=Strafe',
     });
     airplaneHint.disabled = true;
     
@@ -2214,8 +2097,6 @@
       // Airplane hover defaults
       pointMaterial.uniforms.uAirplaneHoverEnabled.value = params.airplaneHoverEnabled ? 1.0 : 0.0;
       pointMaterial.uniforms.uAirplaneHoverRadius.value = params.airplaneHoverRadius;
-      // Set controls bar color from Safe Color
-      document.getElementById('controlsBar').style.background = params.airplaneColorSafe;
       
       // Record defaults for Reset
       defaultCamPos = new THREE.Vector3().copy(camera.position);
@@ -2431,68 +2312,6 @@
       renderer.setSize(width, height);
     });
 
-    // ========== SPEED INDICATOR ==========
-    const speedIndicator = document.getElementById('speed-indicator');
-    const speedMarker = speedIndicator.querySelector('.speed-marker');
-    const speedValue = speedIndicator.querySelector('.speed-value');
-    const maxDisplaySpeed = 10.0; // Maximum speed for display scaling
-    
-    function updateSpeedUI() {
-      const currentSpeed = state.scrollSpeed;
-      
-      // Map speed to percentage (0 at bottom, maxSpeed at top)
-      const percent = (currentSpeed / maxDisplaySpeed) * 100;
-      const clampedPercent = Math.max(5, Math.min(95, percent));
-      
-      speedMarker.style.bottom = clampedPercent + '%';
-      speedValue.textContent = currentSpeed.toFixed(1);
-    }
-    
-    // ========== ALTITUDE INDICATOR ==========
-    const altitudeIndicator = document.getElementById('altitude-indicator');
-    const altMarker = altitudeIndicator.querySelector('.alt-marker');
-    const altValue = altitudeIndicator.querySelector('.alt-value');
-    
-    function updateAltitudeUI() {
-      // Get current altitude (baseAltitude + y offset), clamped to minimum of 0
-      const currentAlt = Math.max(0, airplaneState.baseAltitude + airplaneState.y);
-      
-      // Map altitude to percentage (0 at bottom, maxAlt at top)
-      const maxAlt = airplaneState.baseAltitude + airplaneState.altitudeRange;
-      const percent = (currentAlt / maxAlt) * 100;
-      const clampedPercent = Math.max(5, Math.min(95, percent));
-      
-      altMarker.style.bottom = clampedPercent + '%';
-      altValue.textContent = currentAlt.toFixed(1);
-    }
-    
-    // Update indicator positions based on airplane screen position
-    const indicatorOffset = 80; // pixels from airplane center
-    function updateIndicatorPositions() {
-      if (!airplaneGroup || !renderer) return;
-      
-      // Get canvas dimensions (this is the actual 3D rendering area)
-      const canvas = renderer.domElement;
-      const rect = canvas.getBoundingClientRect();
-      
-      // Project airplane position to screen coordinates
-      const airplaneScreenPos = new THREE.Vector3();
-      airplaneScreenPos.copy(airplaneGroup.position);
-      airplaneScreenPos.project(camera);
-      
-      // Convert from NDC (-1 to 1) to screen pixels relative to canvas
-      const canvasX = (airplaneScreenPos.x * 0.5 + 0.5) * rect.width + rect.left;
-      const screenY = window.innerHeight / 2; // Keep vertical centered
-      
-      // Position speed indicator to the left of airplane
-      speedIndicator.style.left = (canvasX - indicatorOffset) + 'px';
-      speedIndicator.style.top = screenY + 'px';
-      
-      // Position altitude indicator to the right of airplane  
-      altitudeIndicator.style.left = (canvasX + indicatorOffset) + 'px';
-      altitudeIndicator.style.top = screenY + 'px';
-    }
-
     // Animate
     function animate() {
       requestAnimationFrame(animate);
@@ -2534,10 +2353,6 @@
         if (isChaseStyle) {
           pointMaterial.uniforms.uMaskCenter.value.set(0, 0);
         }
-        // Update UI indicators
-        updateAltitudeUI();
-        updateSpeedUI();
-        updateIndicatorPositions();
       } else {
         pointMaterial.uniforms.uAirplanePos.value.set(9999, 9999, 9999);
       }
